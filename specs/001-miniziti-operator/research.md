@@ -45,13 +45,14 @@ adapter interface.
 
 **Rationale**: A namespaced resource model keeps blast radius small, supports
 future namespace-scoped defaults, and matches the desire to keep the first
-implementation easy to operate. External OpenZiti names will therefore be
-derived deterministically from namespace and resource name. For `ZitiService`,
-the MVP models only explicit `intercept` and `host` config blocks so the CRD
-can validate common service definitions without opening the door to arbitrary
-raw payloads in v1. For `ZitiAccessPolicy`, selectors stay limited to
-`matchNames` and `matchRoleAttributes`, and policy type stays limited to
-`Dial`/`Bind`.
+implementation easy to operate. Backend names remain explicit in
+`spec.name`, while reconciliation safety comes from `status.id` plus
+namespace-scoped ownership of each `<namespace>/<kind>/<spec.name>` tuple. For
+`ZitiService`, the MVP models only explicit `intercept` and `host` config
+blocks so the CRD can validate common service definitions without opening the
+door to arbitrary raw payloads in v1. For `ZitiAccessPolicy`, selectors stay
+limited to `matchNames` and `matchRoleAttributes`, and policy type stays
+limited to `Dial`/`Bind`.
 
 **Alternatives considered**:
 
@@ -131,3 +132,107 @@ requested per identity and should be created only when the corresponding
 
 - Product notes: `/home/roche/projects/miniziti-operator/ziti-operator-spec.md`
 - Constitution: `/home/roche/projects/miniziti-operator/.specify/memory/constitution.md`
+
+## Decision: Authenticate to the OpenZiti management API with username/password sessions
+
+**Rationale**: The MVP quickstart already models controller connectivity with a
+Secret containing `controllerUrl`, `username`, and `password`. The operator
+will therefore support one credential format in v1: username/password login
+against the OpenZiti Edge Management API session endpoint. The credential
+Secret shape is:
+
+- `controllerUrl`: base management API URL
+- `username`: management username
+- `password`: management password
+
+The internal OpenZiti client adapter is responsible for session lifecycle:
+
+- Load the Secret during startup and on each reconcile so Secret rotation is
+  picked up without restarting the controller.
+- Authenticate lazily before the first outbound management API call and cache
+  the returned session/token only in memory.
+- Reuse the cached session across reconciles until the API returns an
+  authentication failure such as HTTP 401 or 403.
+- On authentication failure, reload the Secret, reauthenticate once, and retry
+  the failed backend request once before surfacing the error.
+- If the Secret contents are invalid, missing, or rotated to unusable values,
+  mark affected resources degraded with an actionable authentication error and
+  rely on normal reconciliation retries after the Secret is corrected.
+
+This keeps credential handling narrow, matches the documented quickstart, and
+avoids committing to extra token or client-certificate flows before the MVP has
+an implementation need for them.
+
+**Alternatives considered**:
+
+- Support API tokens in v1. Rejected because the current operator UX and
+  examples already standardize on username/password, and adding multiple
+  credential shapes would complicate validation and support without a stated
+  requirement.
+- Authenticate on every reconcile request. Rejected because it adds avoidable
+  latency and load while providing little value over cached sessions with
+  forced reauthentication on auth failures.
+- Persist sessions in Kubernetes state. Rejected because sessions are runtime
+  transport concerns and should not become part of the CRD API or Secret model.
+
+**Sources**:
+
+- Quickstart: `/home/roche/projects/miniziti-operator/specs/001-miniziti-operator/quickstart.md`
+- Feature spec: `/home/roche/projects/miniziti-operator/specs/001-miniziti-operator/spec.md`
+- OpenZiti Edge API repository: https://github.com/openziti/edge-api
+
+## Decision: Use controller-runtime retry behavior with explicit transient vs terminal error classification
+
+**Rationale**: The operator needs predictable retry behavior without inventing
+its own scheduler. In v1, reconcilers will rely on controller-runtime's normal
+rate-limited requeue behavior for returned errors, while classifying backend
+failures so status and follow-up actions are consistent. The error-handling
+policy is:
+
+- Validation errors in the custom resource spec are terminal for the current
+  generation. The controller sets `Degraded=True`, records an actionable
+  `status.lastError`, updates `status.observedGeneration`, and does not request
+  a special requeue beyond future spec changes or normal watch events.
+- Authentication failures after the single forced reauthentication attempt are
+  transient. The controller returns an error so controller-runtime applies its
+  rate-limited retry behavior.
+- Network failures, transport timeouts, HTTP 5xx responses, and explicit
+  upstream unavailability are transient. The controller leaves any confirmed
+  remote objects intact, updates status to degraded, and returns an error for
+  retry.
+- A 404 for an object referenced by `status.id` is treated as recoverable
+  absence. The controller clears the stale assumption, falls back to
+  `<namespace>/<kind>/<spec.name>` lookup, and recreates the object if no
+  managed backend object exists.
+- A 409 or equivalent name-conflict response during create is terminal until
+  user action when the conflicting object is not proven to belong to the same
+  Kubernetes resource. The controller must not overwrite or adopt ambiguous
+  backend state.
+- Partial success is not rolled back automatically in v1. If one step in a
+  multi-object reconcile succeeds and a later step fails, the controller stores
+  any known external IDs, reports a degraded condition, and converges forward
+  on the next retry rather than deleting already-created artifacts.
+
+This means, for example, that a `ZitiService` reconcile that creates the
+intercept config but fails while creating the host config records the intercept
+config ID, reports the resource degraded, and retries until the remaining host
+config and service steps converge. The same forward-only rule applies to
+identity enrollment Secrets and access-policy updates.
+
+**Alternatives considered**:
+
+- Define a custom fixed retry interval in every reconciler. Rejected because it
+  duplicates controller-runtime behavior and makes retry policy harder to keep
+  consistent across controllers.
+- Roll back partial backend writes on every failed reconcile. Rejected because
+  it increases API churn, complicates idempotency, and can make failure loops
+  less stable than converging from recorded partial progress.
+- Treat all OpenZiti API errors as terminal. Rejected because temporary
+  management-plane outages are an explicit edge case and must recover
+  automatically.
+
+**Sources**:
+
+- Feature spec: `/home/roche/projects/miniziti-operator/specs/001-miniziti-operator/spec.md`
+- Implementation plan: `/home/roche/projects/miniziti-operator/specs/001-miniziti-operator/plan.md`
+- Kubebuilder book: https://book.kubebuilder.io/reference/watching-resources/predicates-with-watch

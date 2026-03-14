@@ -8,6 +8,28 @@ The MVP exposes three namespaced custom resources under
 stable external identifier in status, and uses finalizers to clean up
 operator-managed backend state.
 
+## Naming Model
+
+Each managed resource carries two distinct names:
+
+- `metadata.name` is the Kubernetes object key and is the stable basis for
+  reconciliation.
+- `spec.name` is the exact OpenZiti object name sent to the management API.
+
+The operator treats `spec.name` as the canonical backend name for
+`ZitiIdentity` and `ZitiService`. Deterministic lookup therefore uses the tuple
+`<namespace>/<kind>/<spec.name>`, not a derived name from `metadata.name`.
+`status.id` remains the primary lookup key after the first successful create,
+and `spec.name` is the fallback lookup key when status has not yet been
+recorded or when the operator must recover from a missing status update.
+
+Cross-namespace uniqueness of `spec.name` is intentionally left to the user and
+the target OpenZiti environment. The operator does not rewrite `spec.name` to
+include the Kubernetes namespace, because doing so would make manifests diverge
+from the backend names users expect to manage. To preserve idempotency, the
+operator must reject creation or adoption when an existing OpenZiti object with
+the same name is already tracked by a different Kubernetes resource.
+
 ## Shared Status Model
 
 ### Common Status Fields
@@ -27,6 +49,21 @@ operator-managed backend state.
   object no longer exists and recreates it intentionally.
 - `status.lastError` must be cleared when reconciliation succeeds.
 
+### Shared Reconciliation Failure Rules
+
+- Validation failures for the current spec generation are terminal until the
+  user changes the resource and must be reported through `Degraded` and
+  `status.lastError`.
+- Transient backend failures such as authentication loss, network errors,
+  upstream 5xx responses, and temporary management-plane unavailability must
+  set an actionable degraded condition and rely on normal controller retries.
+- A missing backend object referenced by `status.id` is treated as recoverable:
+  the operator rechecks ownership by `<namespace>/<kind>/<spec.name>` and
+  recreates the managed object when no owned backend object remains.
+- Partial progress must be recorded in status where fields exist and converged
+  forward on later retries; v1 does not require rollback of already-created
+  backend artifacts after a later step fails.
+
 ## ZitiIdentity
 
 ### Purpose
@@ -37,7 +74,7 @@ Represents an employee, workload, or node identity managed in OpenZiti.
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| `spec.name` | string | yes | Desired external identity name |
+| `spec.name` | string | yes | Exact OpenZiti identity name |
 | `spec.type` | string | yes | Allowed values in v1: `User`, `Device`, `Service` |
 | `spec.roleAttributes` | array of string | no | Unique, non-empty role attributes |
 | `spec.enrollment.createJwtSecret` | boolean | no | Defaults to `false` |
@@ -55,6 +92,29 @@ Represents an employee, workload, or node identity managed in OpenZiti.
 - `spec.type` must be `User`, `Device`, or `Service`.
 - `spec.roleAttributes` must not contain duplicates.
 - `spec.enrollment.jwtSecretName` must be a valid Secret name when present.
+
+### Enrollment JWT Lifecycle
+
+- When `spec.enrollment.createJwtSecret` is `true`, the operator fetches the
+  enrollment JWT from OpenZiti only after the identity has been created
+  successfully or after the existing identity has been confirmed as the managed
+  backend object.
+- The operator creates the Kubernetes Secret named by
+  `spec.enrollment.jwtSecretName` exactly once for the current identity
+  instance, sets `status.jwtSecretName`, and treats the Secret as
+  operator-managed output.
+- Reconciliation must not rotate or overwrite an existing JWT Secret during
+  steady-state retries if the Secret is present and owned by the same
+  `ZitiIdentity`.
+- If the JWT Secret is deleted while the `ZitiIdentity` still exists and the
+  spec still requests it, the operator recreates the Secret on the next
+  successful reconcile by fetching fresh enrollment material from OpenZiti.
+- JWT rotation is not automatic in v1. A new JWT is issued only when the
+  underlying OpenZiti identity is recreated or when the operator must recreate
+  a missing operator-owned JWT Secret.
+- If a Secret with the requested name already exists but is not owned by the
+  `ZitiIdentity`, reconciliation fails with a degraded condition instead of
+  overwriting user-managed data.
 
 ### State Transitions
 
@@ -75,7 +135,7 @@ the MVP workflow.
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| `spec.name` | string | yes | Desired external service name |
+| `spec.name` | string | yes | Exact OpenZiti service name |
 | `spec.roleAttributes` | array of string | no | Service role attributes |
 | `spec.configs.intercept.protocols` | array of string | yes | MVP requires at least one protocol |
 | `spec.configs.intercept.addresses` | array of string | yes | Service addresses exposed to clients |
@@ -119,9 +179,9 @@ between selected identities and services.
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
 | `spec.type` | string | yes | Allowed values: `Dial`, `Bind` |
-| `spec.identitySelector.matchNames` | array of string | no | Explicit identity names |
+| `spec.identitySelector.matchNames` | array of string | no | Explicit OpenZiti identity names (`ZitiIdentity.spec.name`) |
 | `spec.identitySelector.matchRoleAttributes` | array of string | no | Identity role attributes |
-| `spec.serviceSelector.matchNames` | array of string | no | Explicit service names |
+| `spec.serviceSelector.matchNames` | array of string | no | Explicit OpenZiti service names (`ZitiService.spec.name`) |
 | `spec.serviceSelector.matchRoleAttributes` | array of string | no | Service role attributes |
 
 ### Validation Rules
@@ -133,7 +193,16 @@ between selected identities and services.
 
 ### Derived Behavior
 
-- Selector inputs compile to OpenZiti role expressions during reconciliation.
+- `matchNames` values refer to OpenZiti object names, which in operator-managed
+  cases are the values declared in `spec.name`.
+- Each `matchNames` entry compiles to an OpenZiti `@name` role expression.
+- Each `matchRoleAttributes` entry compiles to an OpenZiti `#attribute` role
+  expression.
+- When both `matchNames` and `matchRoleAttributes` are present for the same
+  selector, the resulting role expressions are combined as a union (logical OR)
+  in a single selector set.
+- Duplicate compiled role expressions are removed before the policy is sent to
+  OpenZiti.
 - Matching zero identities or zero services is not a schema failure, but it
   must surface a degraded or not-ready condition with an actionable message.
 
@@ -155,7 +224,8 @@ between selected identities and services.
 ## Naming and Ownership
 
 - Kubernetes resources are namespaced.
-- External OpenZiti names are derived deterministically from namespace and
-  resource name to prevent duplicate objects across namespaces.
+- `spec.name` is the external OpenZiti name for identities and services.
+- The operator reconciles by `status.id` first and by `<namespace>/<kind>/<spec.name>`
+  ownership records second when status is absent or stale.
 - Finalizers only delete backend objects or Secrets created by the operator for
   the current resource.

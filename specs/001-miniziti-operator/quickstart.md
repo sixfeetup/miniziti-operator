@@ -31,8 +31,8 @@ kubebuilder create api --group ziti --version v1alpha1 --kind ZitiAccessPolicy -
 
 ## 3. Configure operator credentials
 
-Create a namespace for the operator and a Secret containing the OpenZiti
-controller URL and management credentials:
+Create a namespace for the operator and a Secret containing the only supported
+v1 management credential format: controller URL plus username/password:
 
 ```bash
 kubectl create namespace miniziti-system
@@ -129,6 +129,9 @@ kubectl apply -f specs/001-miniziti-operator/contracts/miniziti-samples.yaml
 kubectl get zitiidentities,zitiservices,zitiaccesspolicies -A
 kubectl describe zitiidentity alice
 ```
+
+In the sample policy, `serviceSelector.matchNames: [argocd]` matches the
+OpenZiti service name declared in `ZitiService.spec.name`.
 
 ## 7. Run the test suites
 

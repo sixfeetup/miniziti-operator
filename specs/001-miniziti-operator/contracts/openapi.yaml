@@ -6,6 +6,9 @@ info:
     Kubernetes-facing contract for the Miniziti operator. The custom resources
     under ziti.sixfeetup.com/v1alpha1 are the source of truth for the OpenZiti
     identities, services, and service access policies managed by the operator.
+    This document is a design-time schema reference only, not a runtime API
+    served by Kubernetes. The runtime schemas come from the generated CRD
+    structural schemas produced by controller-gen.
 servers:
   - url: https://kubernetes.example.invalid
 paths:

@@ -68,8 +68,8 @@ and final status transitions.
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T011 [P] [US1] Add create and update reconcile tests with status and event assertions in `test/integration/zitiidentity_controller_test.go`
-- [ ] T012 [P] [US1] Add delete, finalizer, enrollment Secret, failure-status, and failure-event tests in `test/integration/zitiidentity_controller_test.go`
+- [ ] T011 [US1] Add create and update reconcile tests with status and event assertions in `test/integration/zitiidentity_controller_test.go`
+- [ ] T012 [US1] Add delete, finalizer, enrollment Secret, failure-status, and failure-event tests in `test/integration/zitiidentity_controller_test.go`
 
 ### Implementation for User Story 1
 
@@ -93,8 +93,8 @@ then delete the resource and confirm config and service cleanup.
 
 ### Tests for User Story 2 (REQUIRED) ⚠️
 
-- [ ] T018 [P] [US2] Add create and update reconcile tests with status and event assertions in `test/integration/zitiservice_controller_test.go`
-- [ ] T019 [P] [US2] Add config cleanup, failure-status, and failure-event tests in `test/integration/zitiservice_controller_test.go`
+- [ ] T018 [US2] Add create and update reconcile tests with status and event assertions in `test/integration/zitiservice_controller_test.go`
+- [ ] T019 [US2] Add config cleanup, failure-status, and failure-event tests in `test/integration/zitiservice_controller_test.go`
 
 ### Implementation for User Story 2
 
@@ -119,8 +119,8 @@ confirm policy cleanup.
 
 ### Tests for User Story 3 (REQUIRED) ⚠️
 
-- [ ] T025 [P] [US3] Add selector-based create and update reconcile tests with status and event assertions in `test/integration/zitiaccesspolicy_controller_test.go`
-- [ ] T026 [P] [US3] Add zero-match, retry, delete, failure-status, and failure-event tests in `test/integration/zitiaccesspolicy_controller_test.go`
+- [ ] T025 [US3] Add selector-based create and update reconcile tests with status and event assertions in `test/integration/zitiaccesspolicy_controller_test.go`
+- [ ] T026 [US3] Add zero-match, retry, delete, failure-status, and failure-event tests in `test/integration/zitiaccesspolicy_controller_test.go`
 
 ### Implementation for User Story 3
 
@@ -173,7 +173,8 @@ confirm policy cleanup.
 
 - T002 and T003 can run in parallel once T001 creates the initial scaffold
 - T005, T006, T007, and T009 can run in parallel after T004
-- The two test tasks in each user story can run in parallel
+- The two test tasks in each user story are sequential because they update the
+  same integration test file
 - API-type tasks and adapter tasks within a story can run in parallel before the reconciler task
 - User Story 1 and User Story 2 can proceed in parallel after Foundational if staffing allows
 
@@ -182,7 +183,7 @@ confirm policy cleanup.
 ## Parallel Example: User Story 1
 
 ```bash
-# Launch tests for User Story 1 together:
+# Execute the User Story 1 test tasks sequentially because they share one file:
 Task: "Add create and update reconcile tests with status and event assertions in test/integration/zitiidentity_controller_test.go"
 Task: "Add delete, finalizer, enrollment Secret, failure-status, and failure-event tests in test/integration/zitiidentity_controller_test.go"
 
@@ -194,7 +195,7 @@ Task: "Implement identity sync mapping and backend operations in internal/openzi
 ## Parallel Example: User Story 2
 
 ```bash
-# Launch tests for User Story 2 together:
+# Execute the User Story 2 test tasks sequentially because they share one file:
 Task: "Add create and update reconcile tests with status and event assertions in test/integration/zitiservice_controller_test.go"
 Task: "Add config cleanup, failure-status, and failure-event tests in test/integration/zitiservice_controller_test.go"
 
@@ -206,7 +207,7 @@ Task: "Implement service and config sync operations in internal/openziti/service
 ## Parallel Example: User Story 3
 
 ```bash
-# Launch tests for User Story 3 together:
+# Execute the User Story 3 test tasks sequentially because they share one file:
 Task: "Add selector-based create and update reconcile tests with status and event assertions in test/integration/zitiaccesspolicy_controller_test.go"
 Task: "Add zero-match, retry, delete, failure-status, and failure-event tests in test/integration/zitiaccesspolicy_controller_test.go"
 

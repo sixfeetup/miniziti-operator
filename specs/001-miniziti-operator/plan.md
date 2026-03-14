@@ -34,7 +34,7 @@ to identities, services, access policies, and optional enrollment JWT secrets.
   `ziti.sixfeetup.com/v1alpha1` CRDs with stable status fields and no schema
   expansion beyond the MVP resource set.
 - Reconciliation safety: PASS. Reconcilers will use stored external IDs plus
-  deterministic names derived from namespace and resource name, with finalizers
+  namespace-scoped ownership of explicit `spec.name` values, with finalizers
   limited to deleting operator-owned OpenZiti objects and generated secrets.
 - Observability: PASS. Every CRD includes `status.id`, `status.conditions`,
   `status.observedGeneration`, and `status.lastError`, plus Kubernetes events
@@ -102,8 +102,8 @@ under `internal/credentials/`.
   resource paths and schemas for the three CRDs, and `data-model.md` defines
   stable status surfaces for v1alpha1.
 - Reconciliation safety: PASS. The design keeps explicit external ID tracking,
-  deterministic names, bounded selector semantics, and finalizer ownership
-  rules in the data model and quickstart flow.
+  namespace-scoped ownership of `spec.name`, bounded selector semantics, and
+  finalizer ownership rules in the data model and quickstart flow.
 - Observability: PASS. The data model requires actionable status and condition
   updates for each resource lifecycle step, and quickstart validation includes
   checking status and events.
