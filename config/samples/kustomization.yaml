@@ -1,0 +1,4 @@
+namespace: miniziti-system
+
+resources:
+- openziti-management-secret.yaml
