@@ -43,7 +43,7 @@ implementation and testing of each story.
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T004 Define shared API metadata and common status types in `api/v1alpha1/groupversion_info.go` and `api/v1alpha1/common_types.go`
+- [X] T004 Define shared API metadata and common status types in `api/v1alpha1/groupversion_info.go` and `api/v1alpha1/common_types.go`
 - [ ] T005 [P] Implement operator credential loading and validation in `internal/credentials/config.go` and `internal/credentials/config_test.go`
 - [ ] T006 [P] Generate or import the OpenZiti Edge Management client and wrap it behind the shared interface in `internal/openziti/client/client.go` and `internal/openziti/client/fake_client.go`
 - [ ] T007 [P] Create shared reconcile helpers for conditions, events, and finalizers in `internal/controller/reconcile_helpers.go`
