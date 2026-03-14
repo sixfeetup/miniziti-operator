@@ -68,7 +68,7 @@ and final status transitions.
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T011 [US1] Add create and update reconcile tests with status and event assertions in `test/integration/zitiidentity_controller_test.go`
+- [X] T011 [US1] Add create and update reconcile tests with status and event assertions in `test/integration/zitiidentity_controller_test.go`
 - [ ] T012 [US1] Add delete, finalizer, enrollment Secret, failure-status, and failure-event tests in `test/integration/zitiidentity_controller_test.go`
 
 ### Implementation for User Story 1
