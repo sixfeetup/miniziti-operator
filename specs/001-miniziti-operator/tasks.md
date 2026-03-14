@@ -44,11 +44,11 @@ implementation and testing of each story.
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
 - [X] T004 Define shared API metadata and common status types in `api/v1alpha1/groupversion_info.go` and `api/v1alpha1/common_types.go`
-- [ ] T005 [P] Implement operator credential loading and validation in `internal/credentials/config.go` and `internal/credentials/config_test.go`
-- [ ] T006 [P] Generate or import the OpenZiti Edge Management client and wrap it behind the shared interface in `internal/openziti/client/client.go` and `internal/openziti/client/fake_client.go`
-- [ ] T007 [P] Create shared reconcile helpers for conditions, events, and finalizers in `internal/controller/reconcile_helpers.go`
+- [X] T005 [P] Implement operator credential loading and validation in `internal/credentials/config.go` and `internal/credentials/config_test.go`
+- [X] T006 [P] Generate or import the OpenZiti Edge Management client and wrap it behind the shared interface in `internal/openziti/client/client.go` and `internal/openziti/client/fake_client.go`
+- [X] T007 [P] Create shared reconcile helpers for conditions, events, and finalizers in `internal/controller/reconcile_helpers.go`
 - [ ] T008 Configure RBAC, manager defaults, and sample kustomization in `config/rbac/role.yaml`, `config/default/kustomization.yaml`, and `config/samples/kustomization.yaml`
-- [ ] T009 Set up the envtest integration harness in `test/integration/suite_test.go` and `test/integration/testdata/kustomization.yaml`
+- [X] T009 Set up the envtest integration harness in `test/integration/suite_test.go` and `test/integration/testdata/kustomization.yaml`
 - [ ] T010 Add operator runtime Secret samples in `config/samples/openziti-management-secret.yaml` and `config/default/manager_credentials_patch.yaml`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin

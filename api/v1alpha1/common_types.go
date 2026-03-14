@@ -42,3 +42,19 @@ type CommonStatus struct {
 	// +optional
 	LastError string `json:"lastError,omitempty"`
 }
+
+// GetConditions returns the current condition slice.
+func (s *CommonStatus) GetConditions() []metav1.Condition {
+	if s == nil {
+		return nil
+	}
+	return s.Conditions
+}
+
+// SetConditions replaces the current condition slice.
+func (s *CommonStatus) SetConditions(conditions []metav1.Condition) {
+	if s == nil {
+		return
+	}
+	s.Conditions = conditions
+}
