@@ -1,1 +1,17 @@
 .direnv
+.DS_Store
+.idea/
+.vscode/
+Thumbs.db
+*.exe
+*.out
+*.swp
+*.test
+*.tmp
+.env
+.env.*
+.tmp-kb/
+bin/
+dist/
+tmp-kb/
+vendor/

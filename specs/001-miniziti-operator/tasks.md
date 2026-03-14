@@ -31,7 +31,7 @@ implementation and testing of each story.
 
 **Purpose**: Scaffold the operator project and establish the shared toolchain
 
-- [ ] T001 Initialize the Kubebuilder project scaffolding in `go.mod`, `.gitignore`, `cmd/main.go`, and `Makefile`
+- [X] T001 Initialize the Kubebuilder project scaffolding in `go.mod`, `.gitignore`, `cmd/main.go`, and `Makefile`
 - [ ] T002 [P] Configure base manager and kustomize manifests in `config/default/kustomization.yaml`, `config/manager/manager.yaml`, and `config/rbac/role.yaml`
 - [ ] T003 [P] Add controller tooling and generated artifact support in `hack/tools.go`, `.gitignore`, and `Makefile`
 
