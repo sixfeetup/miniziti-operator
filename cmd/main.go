@@ -34,6 +34,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
+	zitiv1alpha1 "example.com/miniziti-operator/api/v1alpha1"
+	"example.com/miniziti-operator/internal/controller"
+	openziticlient "example.com/miniziti-operator/internal/openziti/client"
+	identityservice "example.com/miniziti-operator/internal/openziti/identity"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -44,6 +49,7 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(zitiv1alpha1.AddToScheme(scheme))
 
 	// +kubebuilder:scaffold:scheme
 }
@@ -171,6 +177,16 @@ func main() {
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
+		os.Exit(1)
+	}
+
+	if err = (&controller.ZitiIdentityReconciler{
+		Client:          mgr.GetClient(),
+		Scheme:          mgr.GetScheme(),
+		Recorder:        mgr.GetEventRecorderFor("zitiidentity-controller"),
+		IdentityService: identityservice.NewService(openziticlient.New()),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ZitiIdentity")
 		os.Exit(1)
 	}
 

@@ -72,7 +72,7 @@ var _ = Describe("ZitiIdentity controller", func() {
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(found).To(BeTrue())
 			g.Expect(status["id"]).NotTo(BeEmpty())
-			g.Expect(status["observedGeneration"]).To(Equal(int64(1)))
+			g.Expect(status["observedGeneration"]).To(Equal(stored.GetGeneration()))
 
 			conditions, found, err := unstructured.NestedSlice(stored.Object, "status", "conditions")
 			g.Expect(err).NotTo(HaveOccurred())
@@ -162,7 +162,7 @@ var _ = Describe("ZitiIdentity controller", func() {
 
 	It("reports degraded status when reconciliation fails", func() {
 		identity := newZitiIdentity("alice-failure")
-		Expect(unstructured.SetNestedStringSlice(identity.Object, []string{"employee", "employee"}, "spec", "roleAttributes")).To(Succeed())
+		unstructured.SetNestedField(identity.Object, "fail-status@example.com", "spec", "name")
 		Expect(k8sClient.Create(ctx, identity)).To(Succeed())
 
 		Eventually(func(g Gomega) {
@@ -179,7 +179,7 @@ var _ = Describe("ZitiIdentity controller", func() {
 
 	It("emits a warning event when reconciliation fails", func() {
 		identity := newZitiIdentity("alice-event")
-		unstructured.SetNestedField(identity.Object, "", "spec", "name")
+		unstructured.SetNestedField(identity.Object, "fail-event@example.com", "spec", "name")
 		Expect(k8sClient.Create(ctx, identity)).To(Succeed())
 
 		Eventually(func(g Gomega) {

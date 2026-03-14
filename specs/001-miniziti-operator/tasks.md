@@ -75,9 +75,9 @@ and final status transitions.
 
 - [X] T013 [P] [US1] Define the `ZitiIdentity` API schema and enum validation for `User`, `Device`, and `Service` in `api/v1alpha1/zitiidentity_types.go`
 - [X] T014 [P] [US1] Implement identity sync mapping and backend operations in `internal/openziti/identity/service.go` and `internal/openziti/identity/types.go`
-- [ ] T015 [US1] Implement enrollment Secret creation and refresh logic in `internal/credentials/enrollment_secret.go`
-- [ ] T016 [US1] Implement the `ZitiIdentity` reconciler in `internal/controller/zitiidentity_controller.go`
-- [ ] T017 [US1] Generate the identity CRD and add identity samples in `config/crd/bases/ziti.sixfeetup.com_zitiidentities.yaml` and `config/samples/ziti_v1alpha1_zitiidentity.yaml`
+- [X] T015 [US1] Implement enrollment Secret creation and refresh logic in `internal/credentials/enrollment_secret.go`
+- [X] T016 [US1] Implement the `ZitiIdentity` reconciler in `internal/controller/zitiidentity_controller.go`
+- [X] T017 [US1] Generate the identity CRD and add identity samples in `config/crd/bases/ziti.sixfeetup.com_zitiidentities.yaml` and `config/samples/ziti_v1alpha1_zitiidentity.yaml`
 
 **Checkpoint**: User Story 1 should be fully functional and testable on its own
 

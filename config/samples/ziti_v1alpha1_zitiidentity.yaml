@@ -1,0 +1,13 @@
+apiVersion: ziti.sixfeetup.com/v1alpha1
+kind: ZitiIdentity
+metadata:
+  name: alice
+spec:
+  name: alice@example.com
+  type: User
+  roleAttributes:
+  - employee
+  - devops
+  enrollment:
+    createJwtSecret: true
+    jwtSecretName: alice-ziti-jwt
