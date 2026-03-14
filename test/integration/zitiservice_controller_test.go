@@ -103,7 +103,7 @@ var _ = Describe("ZitiService controller", func() {
 		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
 
 		originalID, _, _ := unstructured.NestedString(stored.Object, "status", "id")
-		Expect(unstructured.SetNestedField(stored.Object, "argocd-new.ziti", "spec", "configs", "intercept", "addresses")).To(Succeed())
+		Expect(unstructured.SetNestedStringSlice(stored.Object, []string{"argocd-new.ziti"}, "spec", "configs", "intercept", "addresses")).To(Succeed())
 		Expect(k8sClient.Update(ctx, stored)).To(Succeed())
 
 		Eventually(func(g Gomega) {
@@ -116,6 +116,64 @@ var _ = Describe("ZitiService controller", func() {
 			g.Expect(found).To(BeTrue())
 			g.Expect(id).To(Equal(originalID))
 			g.Expect(refreshed.GetGeneration()).To(Equal(int64(2)))
+		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
+	})
+
+	It("removes managed configs and the backend service on delete", func() {
+		service := newZitiService("argocd-delete")
+		Expect(k8sClient.Create(ctx, service)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			stored := &unstructured.Unstructured{}
+			stored.SetGroupVersionKind(zitiServiceGVK)
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(service), stored)).To(Succeed())
+			g.Expect(stored.GetFinalizers()).NotTo(BeEmpty())
+		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
+
+		Expect(k8sClient.Delete(ctx, service)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			stored := &unstructured.Unstructured{}
+			stored.SetGroupVersionKind(zitiServiceGVK)
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(service), stored)).NotTo(Succeed())
+		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
+	})
+
+	It("reports degraded status when config reconciliation fails", func() {
+		service := newZitiService("argocd-failure")
+		unstructured.SetNestedField(service.Object, "fail-config.ziti", "spec", "name")
+		Expect(k8sClient.Create(ctx, service)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			stored := &unstructured.Unstructured{}
+			stored.SetGroupVersionKind(zitiServiceGVK)
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(service), stored)).To(Succeed())
+
+			lastError, found, err := unstructured.NestedString(stored.Object, "status", "lastError")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(found).To(BeTrue())
+			g.Expect(lastError).NotTo(BeEmpty())
+		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
+	})
+
+	It("emits a warning event when config reconciliation fails", func() {
+		service := newZitiService("argocd-event")
+		unstructured.SetNestedField(service.Object, "fail-event.ziti", "spec", "name")
+		Expect(k8sClient.Create(ctx, service)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			var events corev1.EventList
+			g.Expect(k8sClient.List(ctx, &events, client.InNamespace(service.GetNamespace()))).To(Succeed())
+			g.Expect(events.Items).NotTo(BeEmpty())
+
+			foundWarning := false
+			for _, event := range events.Items {
+				if event.Type == corev1.EventTypeWarning {
+					foundWarning = true
+					break
+				}
+			}
+			g.Expect(foundWarning).To(BeTrue())
 		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
 	})
 })

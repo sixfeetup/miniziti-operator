@@ -94,7 +94,7 @@ then delete the resource and confirm config and service cleanup.
 ### Tests for User Story 2 (REQUIRED) ⚠️
 
 - [X] T018 [US2] Add create and update reconcile tests with status and event assertions in `test/integration/zitiservice_controller_test.go`
-- [ ] T019 [US2] Add config cleanup, failure-status, and failure-event tests in `test/integration/zitiservice_controller_test.go`
+- [X] T019 [US2] Add config cleanup, failure-status, and failure-event tests in `test/integration/zitiservice_controller_test.go`
 
 ### Implementation for User Story 2
 
