@@ -1,0 +1,21 @@
+apiVersion: ziti.sixfeetup.com/v1alpha1
+kind: ZitiService
+metadata:
+  name: argocd
+spec:
+  name: argocd
+  roleAttributes:
+  - argocd
+  configs:
+    intercept:
+      protocols:
+      - tcp
+      addresses:
+      - argocd.ziti
+      portRanges:
+      - low: 443
+        high: 443
+    host:
+      protocol: tcp
+      address: argocd-server.argocd.svc.cluster.local
+      port: 443

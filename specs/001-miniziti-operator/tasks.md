@@ -100,9 +100,9 @@ then delete the resource and confirm config and service cleanup.
 
 - [X] T020 [P] [US2] Define the `ZitiService` API schema and typed `intercept`/`host` validation in `api/v1alpha1/zitiservice_types.go`
 - [X] T021 [P] [US2] Implement service and config sync operations in `internal/openziti/service/service.go` and `internal/openziti/service/configs.go`
-- [ ] T022 [US2] Implement the `ZitiService` reconciler in `internal/controller/zitiservice_controller.go`
-- [ ] T023 [US2] Record managed config IDs and cleanup semantics in `api/v1alpha1/zitiservice_types.go` and `internal/controller/zitiservice_controller.go`
-- [ ] T024 [US2] Generate the service CRD and add service samples in `config/crd/bases/ziti.sixfeetup.com_zitiservices.yaml` and `config/samples/ziti_v1alpha1_zitiservice.yaml`
+- [X] T022 [US2] Implement the `ZitiService` reconciler in `internal/controller/zitiservice_controller.go`
+- [X] T023 [US2] Record managed config IDs and cleanup semantics in `api/v1alpha1/zitiservice_types.go` and `internal/controller/zitiservice_controller.go`
+- [X] T024 [US2] Generate the service CRD and add service samples in `config/crd/bases/ziti.sixfeetup.com_zitiservices.yaml` and `config/samples/ziti_v1alpha1_zitiservice.yaml`
 
 **Checkpoint**: User Stories 1 and 2 should both work independently
 

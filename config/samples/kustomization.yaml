@@ -3,3 +3,4 @@ namespace: miniziti-system
 resources:
 - openziti-management-secret.yaml
 - ziti_v1alpha1_zitiidentity.yaml
+- ziti_v1alpha1_zitiservice.yaml

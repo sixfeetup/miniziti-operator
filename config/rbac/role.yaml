@@ -27,6 +27,7 @@ rules:
   - ziti.sixfeetup.com
   resources:
   - zitiidentities
+  - zitiservices
   verbs:
   - create
   - delete
@@ -39,12 +40,14 @@ rules:
   - ziti.sixfeetup.com
   resources:
   - zitiidentities/finalizers
+  - zitiservices/finalizers
   verbs:
   - update
 - apiGroups:
   - ziti.sixfeetup.com
   resources:
   - zitiidentities/status
+  - zitiservices/status
   verbs:
   - get
   - patch

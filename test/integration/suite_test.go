@@ -38,6 +38,7 @@ import (
 	"example.com/miniziti-operator/internal/credentials"
 	openziti "example.com/miniziti-operator/internal/openziti/client"
 	identityservice "example.com/miniziti-operator/internal/openziti/identity"
+	serviceservice "example.com/miniziti-operator/internal/openziti/service"
 )
 
 var (
@@ -48,15 +49,23 @@ var (
 )
 
 type fakeOpenZitiClient struct {
-	mu         sync.Mutex
-	nextID     int
-	identities map[string]*openziti.Identity
+	mu             sync.Mutex
+	nextIdentity   int
+	nextService    int
+	nextConfig     int
+	identities     map[string]*openziti.Identity
+	services       map[string]*openziti.Service
+	serviceConfigs map[string]*openziti.ServiceConfig
 }
 
 func newFakeOpenZitiClient() *fakeOpenZitiClient {
 	return &fakeOpenZitiClient{
-		nextID:     1,
-		identities: map[string]*openziti.Identity{},
+		nextIdentity:   1,
+		nextService:    1,
+		nextConfig:     1,
+		identities:     map[string]*openziti.Identity{},
+		services:       map[string]*openziti.Service{},
+		serviceConfigs: map[string]*openziti.ServiceConfig{},
 	}
 }
 
@@ -92,8 +101,8 @@ func (f *fakeOpenZitiClient) CreateIdentity(_ context.Context, identity openziti
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	identity.ID = fmt.Sprintf("identity-%d", f.nextID)
-	f.nextID++
+	identity.ID = fmt.Sprintf("identity-%d", f.nextIdentity)
+	f.nextIdentity++
 	copy := identity
 	f.identities[identity.ID] = &copy
 	return &identity, nil
@@ -121,40 +130,105 @@ func (f *fakeOpenZitiClient) GetEnrollmentJWT(_ context.Context, id string) (str
 	return "jwt-for-" + id, nil
 }
 
-func (f *fakeOpenZitiClient) GetService(context.Context, string) (*openziti.Service, error) {
+func (f *fakeOpenZitiClient) GetService(_ context.Context, id string) (*openziti.Service, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.getServiceLocked(id)
+}
+
+func (f *fakeOpenZitiClient) FindServiceByName(_ context.Context, name string) (*openziti.Service, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, service := range f.services {
+		if service.Name == name {
+			copy := *service
+			return &copy, nil
+		}
+	}
 	return nil, nil
 }
 
-func (f *fakeOpenZitiClient) FindServiceByName(context.Context, string) (*openziti.Service, error) {
+func (f *fakeOpenZitiClient) CreateService(_ context.Context, service openziti.Service) (*openziti.Service, error) {
+	if err := fakeServiceFailure(service.Name); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	service.ID = fmt.Sprintf("service-%d", f.nextService)
+	f.nextService++
+	copy := service
+	f.services[service.ID] = &copy
+	return &service, nil
+}
+
+func (f *fakeOpenZitiClient) UpdateService(_ context.Context, service openziti.Service) (*openziti.Service, error) {
+	if err := fakeServiceFailure(service.Name); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.services[service.ID]; !ok {
+		return nil, nil
+	}
+	copy := service
+	f.services[service.ID] = &copy
+	return &service, nil
+}
+
+func (f *fakeOpenZitiClient) DeleteService(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.services, id)
+	return nil
+}
+
+func (f *fakeOpenZitiClient) GetConfig(_ context.Context, id string) (*openziti.ServiceConfig, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if cfg, ok := f.serviceConfigs[id]; ok {
+		copy := *cfg
+		copy.Payload = clonePayload(cfg.Payload)
+		return &copy, nil
+	}
 	return nil, nil
 }
 
-func (f *fakeOpenZitiClient) CreateService(context.Context, openziti.Service) (*openziti.Service, error) {
-	return nil, openziti.ErrNotImplemented
+func (f *fakeOpenZitiClient) CreateConfig(_ context.Context, cfg openziti.ServiceConfig) (*openziti.ServiceConfig, error) {
+	if err := fakeConfigFailure(cfg.Name); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	cfg.ID = fmt.Sprintf("config-%d", f.nextConfig)
+	f.nextConfig++
+	copy := cfg
+	copy.Payload = clonePayload(cfg.Payload)
+	f.serviceConfigs[cfg.ID] = &copy
+	result := copy
+	return &result, nil
 }
 
-func (f *fakeOpenZitiClient) UpdateService(context.Context, openziti.Service) (*openziti.Service, error) {
-	return nil, openziti.ErrNotImplemented
+func (f *fakeOpenZitiClient) UpdateConfig(_ context.Context, cfg openziti.ServiceConfig) (*openziti.ServiceConfig, error) {
+	if err := fakeConfigFailure(cfg.Name); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.serviceConfigs[cfg.ID]; !ok {
+		return nil, nil
+	}
+	copy := cfg
+	copy.Payload = clonePayload(cfg.Payload)
+	f.serviceConfigs[cfg.ID] = &copy
+	result := copy
+	return &result, nil
 }
 
-func (f *fakeOpenZitiClient) DeleteService(context.Context, string) error {
-	return openziti.ErrNotImplemented
-}
-
-func (f *fakeOpenZitiClient) GetConfig(context.Context, string) (*openziti.ServiceConfig, error) {
-	return nil, nil
-}
-
-func (f *fakeOpenZitiClient) CreateConfig(context.Context, openziti.ServiceConfig) (*openziti.ServiceConfig, error) {
-	return nil, openziti.ErrNotImplemented
-}
-
-func (f *fakeOpenZitiClient) UpdateConfig(context.Context, openziti.ServiceConfig) (*openziti.ServiceConfig, error) {
-	return nil, openziti.ErrNotImplemented
-}
-
-func (f *fakeOpenZitiClient) DeleteConfig(context.Context, string) error {
-	return openziti.ErrNotImplemented
+func (f *fakeOpenZitiClient) DeleteConfig(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.serviceConfigs, id)
+	return nil
 }
 
 func (f *fakeOpenZitiClient) GetAccessPolicy(context.Context, string) (*openziti.AccessPolicy, error) {
@@ -182,6 +256,53 @@ func fakeIdentityFailure(name string) error {
 		return fmt.Errorf("simulated backend failure for %s", name)
 	}
 	return nil
+}
+
+func fakeServiceFailure(name string) error {
+	if strings.Contains(name, "fail-service") {
+		return fmt.Errorf("simulated service failure for %s", name)
+	}
+	return nil
+}
+
+func fakeConfigFailure(name string) error {
+	if strings.Contains(name, "fail-config") || strings.Contains(name, "fail-event") {
+		return fmt.Errorf("simulated config failure for %s", name)
+	}
+	return nil
+}
+
+func (f *fakeOpenZitiClient) getServiceLocked(id string) (*openziti.Service, error) {
+	if service, ok := f.services[id]; ok {
+		copy := *service
+		return &copy, nil
+	}
+	return nil, nil
+}
+
+func clonePayload(payload map[string]any) map[string]any {
+	if payload == nil {
+		return nil
+	}
+	copy := make(map[string]any, len(payload))
+	for key, value := range payload {
+		switch typed := value.(type) {
+		case []string:
+			copy[key] = append([]string(nil), typed...)
+		case []map[string]int32:
+			cloned := make([]map[string]int32, 0, len(typed))
+			for _, item := range typed {
+				cloned = append(cloned, map[string]int32{
+					"low":  item["low"],
+					"high": item["high"],
+				})
+			}
+			copy[key] = cloned
+		default:
+			copy[key] = value
+		}
+	}
+	return copy
 }
 
 func TestControllers(t *testing.T) {
@@ -213,13 +334,23 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).NotTo(HaveOccurred())
 
+	fakeClient := newFakeOpenZitiClient()
+
 	reconciler := &controller.ZitiIdentityReconciler{
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
 		Recorder:        mgr.GetEventRecorderFor("zitiidentity-controller"),
-		IdentityService: identityservice.NewService(newFakeOpenZitiClient()),
+		IdentityService: identityservice.NewService(fakeClient),
 	}
 	Expect(reconciler.SetupWithManager(mgr)).To(Succeed())
+
+	serviceReconciler := &controller.ZitiServiceReconciler{
+		Client:         mgr.GetClient(),
+		Scheme:         mgr.GetScheme(),
+		Recorder:       mgr.GetEventRecorderFor("zitiservice-controller"),
+		ServiceManager: serviceservice.NewService(fakeClient),
+	}
+	Expect(serviceReconciler.SetupWithManager(mgr)).To(Succeed())
 
 	go func() {
 		defer GinkgoRecover()

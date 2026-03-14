@@ -115,7 +115,11 @@ var _ = Describe("ZitiService controller", func() {
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(found).To(BeTrue())
 			g.Expect(id).To(Equal(originalID))
-			g.Expect(refreshed.GetGeneration()).To(Equal(int64(2)))
+
+			observedGeneration, found, err := unstructured.NestedInt64(refreshed.Object, "status", "observedGeneration")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(found).To(BeTrue())
+			g.Expect(observedGeneration).To(Equal(refreshed.GetGeneration()))
 		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
 	})
 
