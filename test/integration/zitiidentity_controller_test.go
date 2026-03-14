@@ -50,6 +50,15 @@ func newZitiIdentity(name string) *unstructured.Unstructured {
 	return obj
 }
 
+func newZitiIdentityWithEnrollment(name string) *unstructured.Unstructured {
+	obj := newZitiIdentity(name)
+	obj.Object["spec"].(map[string]any)["enrollment"] = map[string]any{
+		"createJwtSecret": true,
+		"jwtSecretName":   name + "-jwt",
+	}
+	return obj
+}
+
 var _ = Describe("ZitiIdentity controller", func() {
 	It("creates an identity and reports ready state", func() {
 		identity := newZitiIdentity("alice")
@@ -109,6 +118,83 @@ var _ = Describe("ZitiIdentity controller", func() {
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(found).To(BeTrue())
 			g.Expect(observedGeneration).To(Equal(int64(2)))
+		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
+	})
+
+	It("creates the requested enrollment secret and records it in status", func() {
+		identity := newZitiIdentityWithEnrollment("alice-enrollment")
+		Expect(k8sClient.Create(ctx, identity)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			stored := &unstructured.Unstructured{}
+			stored.SetGroupVersionKind(zitiIdentityGVK)
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(identity), stored)).To(Succeed())
+
+			jwtSecretName, found, err := unstructured.NestedString(stored.Object, "status", "jwtSecretName")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(found).To(BeTrue())
+			g.Expect(jwtSecretName).To(Equal("alice-enrollment-jwt"))
+
+			var secret corev1.Secret
+			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: identity.GetNamespace(), Name: jwtSecretName}, &secret)).To(Succeed())
+		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
+	})
+
+	It("adds a finalizer and removes the backend state on delete", func() {
+		identity := newZitiIdentity("alice-delete")
+		Expect(k8sClient.Create(ctx, identity)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			stored := &unstructured.Unstructured{}
+			stored.SetGroupVersionKind(zitiIdentityGVK)
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(identity), stored)).To(Succeed())
+			g.Expect(stored.GetFinalizers()).NotTo(BeEmpty())
+		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
+
+		Expect(k8sClient.Delete(ctx, identity)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			stored := &unstructured.Unstructured{}
+			stored.SetGroupVersionKind(zitiIdentityGVK)
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(identity), stored)).NotTo(Succeed())
+		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
+	})
+
+	It("reports degraded status when reconciliation fails", func() {
+		identity := newZitiIdentity("alice-failure")
+		Expect(unstructured.SetNestedStringSlice(identity.Object, []string{"employee", "employee"}, "spec", "roleAttributes")).To(Succeed())
+		Expect(k8sClient.Create(ctx, identity)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			stored := &unstructured.Unstructured{}
+			stored.SetGroupVersionKind(zitiIdentityGVK)
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(identity), stored)).To(Succeed())
+
+			lastError, found, err := unstructured.NestedString(stored.Object, "status", "lastError")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(found).To(BeTrue())
+			g.Expect(lastError).NotTo(BeEmpty())
+		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
+	})
+
+	It("emits a warning event when reconciliation fails", func() {
+		identity := newZitiIdentity("alice-event")
+		unstructured.SetNestedField(identity.Object, "", "spec", "name")
+		Expect(k8sClient.Create(ctx, identity)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			var events corev1.EventList
+			g.Expect(k8sClient.List(ctx, &events, client.InNamespace(identity.GetNamespace()))).To(Succeed())
+			g.Expect(events.Items).NotTo(BeEmpty())
+
+			foundWarning := false
+			for _, event := range events.Items {
+				if event.Type == corev1.EventTypeWarning {
+					foundWarning = true
+					break
+				}
+			}
+			g.Expect(foundWarning).To(BeTrue())
 		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
 	})
 })
