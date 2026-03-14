@@ -1,0 +1,51 @@
+apiVersion: ziti.sixfeetup.com/v1alpha1
+kind: ZitiIdentity
+metadata:
+  name: alice
+  namespace: default
+spec:
+  name: alice@example.com
+  type: User
+  roleAttributes:
+    - employee
+    - devops
+  enrollment:
+    createJwtSecret: true
+    jwtSecretName: alice-ziti-jwt
+---
+apiVersion: ziti.sixfeetup.com/v1alpha1
+kind: ZitiService
+metadata:
+  name: argocd
+  namespace: default
+spec:
+  name: argocd
+  roleAttributes:
+    - argocd
+  configs:
+    intercept:
+      protocols:
+        - tcp
+      addresses:
+        - argocd.ziti
+      portRanges:
+        - low: 443
+          high: 443
+    host:
+      protocol: tcp
+      address: argocd-server.argocd.svc.cluster.local
+      port: 443
+---
+apiVersion: ziti.sixfeetup.com/v1alpha1
+kind: ZitiAccessPolicy
+metadata:
+  name: argocd-devops-dial
+  namespace: default
+spec:
+  type: Dial
+  identitySelector:
+    matchRoleAttributes:
+      - devops
+  serviceSelector:
+    matchNames:
+      - argocd

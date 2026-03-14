@@ -1,0 +1,494 @@
+openapi: 3.1.0
+info:
+  title: Miniziti Kubernetes API
+  version: v1alpha1
+  description: >
+    Kubernetes-facing contract for the Miniziti operator. The custom resources
+    under ziti.sixfeetup.com/v1alpha1 are the source of truth for the OpenZiti
+    identities, services, and service access policies managed by the operator.
+servers:
+  - url: https://kubernetes.example.invalid
+paths:
+  /apis/ziti.sixfeetup.com/v1alpha1/namespaces/{namespace}/zitiidentities:
+    parameters:
+      - $ref: '#/components/parameters/Namespace'
+    get:
+      summary: List ZitiIdentity resources
+      operationId: listZitiIdentities
+      responses:
+        '200':
+          description: List of identities
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ZitiIdentityList'
+    post:
+      summary: Create a ZitiIdentity resource
+      operationId: createZitiIdentity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ZitiIdentity'
+      responses:
+        '201':
+          description: Identity created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ZitiIdentity'
+  /apis/ziti.sixfeetup.com/v1alpha1/namespaces/{namespace}/zitiidentities/{name}:
+    parameters:
+      - $ref: '#/components/parameters/Namespace'
+      - $ref: '#/components/parameters/Name'
+    get:
+      summary: Get a ZitiIdentity resource
+      operationId: getZitiIdentity
+      responses:
+        '200':
+          description: Identity resource
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ZitiIdentity'
+    patch:
+      summary: Patch a ZitiIdentity resource
+      operationId: patchZitiIdentity
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: '#/components/schemas/ZitiIdentity'
+      responses:
+        '200':
+          description: Identity updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ZitiIdentity'
+    delete:
+      summary: Delete a ZitiIdentity resource
+      operationId: deleteZitiIdentity
+      responses:
+        '200':
+          description: Identity deleted
+  /apis/ziti.sixfeetup.com/v1alpha1/namespaces/{namespace}/zitiservices:
+    parameters:
+      - $ref: '#/components/parameters/Namespace'
+    get:
+      summary: List ZitiService resources
+      operationId: listZitiServices
+      responses:
+        '200':
+          description: List of services
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ZitiServiceList'
+    post:
+      summary: Create a ZitiService resource
+      operationId: createZitiService
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ZitiService'
+      responses:
+        '201':
+          description: Service created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ZitiService'
+  /apis/ziti.sixfeetup.com/v1alpha1/namespaces/{namespace}/zitiservices/{name}:
+    parameters:
+      - $ref: '#/components/parameters/Namespace'
+      - $ref: '#/components/parameters/Name'
+    get:
+      summary: Get a ZitiService resource
+      operationId: getZitiService
+      responses:
+        '200':
+          description: Service resource
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ZitiService'
+    patch:
+      summary: Patch a ZitiService resource
+      operationId: patchZitiService
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: '#/components/schemas/ZitiService'
+      responses:
+        '200':
+          description: Service updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ZitiService'
+    delete:
+      summary: Delete a ZitiService resource
+      operationId: deleteZitiService
+      responses:
+        '200':
+          description: Service deleted
+  /apis/ziti.sixfeetup.com/v1alpha1/namespaces/{namespace}/zitiaccesspolicies:
+    parameters:
+      - $ref: '#/components/parameters/Namespace'
+    get:
+      summary: List ZitiAccessPolicy resources
+      operationId: listZitiAccessPolicies
+      responses:
+        '200':
+          description: List of access policies
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ZitiAccessPolicyList'
+    post:
+      summary: Create a ZitiAccessPolicy resource
+      operationId: createZitiAccessPolicy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ZitiAccessPolicy'
+      responses:
+        '201':
+          description: Access policy created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ZitiAccessPolicy'
+  /apis/ziti.sixfeetup.com/v1alpha1/namespaces/{namespace}/zitiaccesspolicies/{name}:
+    parameters:
+      - $ref: '#/components/parameters/Namespace'
+      - $ref: '#/components/parameters/Name'
+    get:
+      summary: Get a ZitiAccessPolicy resource
+      operationId: getZitiAccessPolicy
+      responses:
+        '200':
+          description: Access policy resource
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ZitiAccessPolicy'
+    patch:
+      summary: Patch a ZitiAccessPolicy resource
+      operationId: patchZitiAccessPolicy
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: '#/components/schemas/ZitiAccessPolicy'
+      responses:
+        '200':
+          description: Access policy updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ZitiAccessPolicy'
+    delete:
+      summary: Delete a ZitiAccessPolicy resource
+      operationId: deleteZitiAccessPolicy
+      responses:
+        '200':
+          description: Access policy deleted
+components:
+  parameters:
+    Namespace:
+      name: namespace
+      in: path
+      required: true
+      schema:
+        type: string
+    Name:
+      name: name
+      in: path
+      required: true
+      schema:
+        type: string
+  schemas:
+    ObjectMeta:
+      type: object
+      required:
+        - name
+        - namespace
+      properties:
+        name:
+          type: string
+        namespace:
+          type: string
+        finalizers:
+          type: array
+          items:
+            type: string
+    Condition:
+      type: object
+      required:
+        - type
+        - status
+        - reason
+        - lastTransitionTime
+      properties:
+        type:
+          type: string
+        status:
+          type: string
+          enum: ["True", "False", "Unknown"]
+        reason:
+          type: string
+        message:
+          type: string
+        lastTransitionTime:
+          type: string
+          format: date-time
+    CommonStatus:
+      type: object
+      properties:
+        id:
+          type: string
+        observedGeneration:
+          type: integer
+          format: int64
+        lastError:
+          type: string
+        conditions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Condition'
+    EnrollmentSpec:
+      type: object
+      properties:
+        createJwtSecret:
+          type: boolean
+          default: false
+        jwtSecretName:
+          type: string
+    ZitiIdentitySpec:
+      type: object
+      required:
+        - name
+        - type
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: ["User", "Device", "Service"]
+          description: OpenZiti-supported identity type for the v1 workflow
+        roleAttributes:
+          type: array
+          items:
+            type: string
+        enrollment:
+          $ref: '#/components/schemas/EnrollmentSpec'
+    ZitiIdentityStatus:
+      allOf:
+        - $ref: '#/components/schemas/CommonStatus'
+        - type: object
+          properties:
+            jwtSecretName:
+              type: string
+    ZitiIdentity:
+      type: object
+      required:
+        - apiVersion
+        - kind
+        - metadata
+        - spec
+      properties:
+        apiVersion:
+          type: string
+          const: ziti.sixfeetup.com/v1alpha1
+        kind:
+          type: string
+          const: ZitiIdentity
+        metadata:
+          $ref: '#/components/schemas/ObjectMeta'
+        spec:
+          $ref: '#/components/schemas/ZitiIdentitySpec'
+        status:
+          $ref: '#/components/schemas/ZitiIdentityStatus'
+    ZitiIdentityList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ZitiIdentity'
+    PortRange:
+      type: object
+      required:
+        - low
+        - high
+      properties:
+        low:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        high:
+          type: integer
+          minimum: 1
+          maximum: 65535
+    InterceptConfig:
+      type: object
+      required:
+        - protocols
+        - addresses
+        - portRanges
+      properties:
+        protocols:
+          type: array
+          items:
+            type: string
+        addresses:
+          type: array
+          items:
+            type: string
+        portRanges:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortRange'
+    HostConfig:
+      type: object
+      required:
+        - protocol
+        - address
+        - port
+      properties:
+        protocol:
+          type: string
+        address:
+          type: string
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+    ZitiServiceConfigs:
+      type: object
+      required:
+        - intercept
+        - host
+      properties:
+        intercept:
+          $ref: '#/components/schemas/InterceptConfig'
+        host:
+          $ref: '#/components/schemas/HostConfig'
+    ZitiServiceSpec:
+      type: object
+      required:
+        - name
+        - configs
+      properties:
+        name:
+          type: string
+        roleAttributes:
+          type: array
+          items:
+            type: string
+        configs:
+          $ref: '#/components/schemas/ZitiServiceConfigs'
+    ZitiServiceStatus:
+      allOf:
+        - $ref: '#/components/schemas/CommonStatus'
+        - type: object
+          properties:
+            configIDs:
+              type: object
+              properties:
+                intercept:
+                  type: string
+                host:
+                  type: string
+    ZitiService:
+      type: object
+      required:
+        - apiVersion
+        - kind
+        - metadata
+        - spec
+      properties:
+        apiVersion:
+          type: string
+          const: ziti.sixfeetup.com/v1alpha1
+        kind:
+          type: string
+          const: ZitiService
+        metadata:
+          $ref: '#/components/schemas/ObjectMeta'
+        spec:
+          $ref: '#/components/schemas/ZitiServiceSpec'
+        status:
+          $ref: '#/components/schemas/ZitiServiceStatus'
+    ZitiServiceList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ZitiService'
+    Selector:
+      type: object
+      properties:
+        matchNames:
+          type: array
+          items:
+            type: string
+        matchRoleAttributes:
+          type: array
+          items:
+            type: string
+    ZitiAccessPolicySpec:
+      type: object
+      required:
+        - type
+        - identitySelector
+        - serviceSelector
+      properties:
+        type:
+          type: string
+          enum: ["Dial", "Bind"]
+        identitySelector:
+          $ref: '#/components/schemas/Selector'
+        serviceSelector:
+          $ref: '#/components/schemas/Selector'
+    ZitiAccessPolicyStatus:
+      $ref: '#/components/schemas/CommonStatus'
+    ZitiAccessPolicy:
+      type: object
+      required:
+        - apiVersion
+        - kind
+        - metadata
+        - spec
+      properties:
+        apiVersion:
+          type: string
+          const: ziti.sixfeetup.com/v1alpha1
+        kind:
+          type: string
+          const: ZitiAccessPolicy
+        metadata:
+          $ref: '#/components/schemas/ObjectMeta'
+        spec:
+          $ref: '#/components/schemas/ZitiAccessPolicySpec'
+        status:
+          $ref: '#/components/schemas/ZitiAccessPolicyStatus'
+    ZitiAccessPolicyList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ZitiAccessPolicy'
