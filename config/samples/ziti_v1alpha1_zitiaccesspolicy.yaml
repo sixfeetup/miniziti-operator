@@ -2,6 +2,7 @@ apiVersion: ziti.sixfeetup.com/v1alpha1
 kind: ZitiAccessPolicy
 metadata:
   name: argocd-devops-dial
+  namespace: default
 spec:
   type: Dial
   identitySelector:

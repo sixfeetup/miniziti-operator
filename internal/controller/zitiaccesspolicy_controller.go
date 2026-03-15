@@ -101,7 +101,8 @@ func (r *ZitiAccessPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, err
 	}
 
-	EmitEvent(r.Recorder, &policy, corev1.EventTypeNormal, "Reconciled", "ZitiAccessPolicy reconciled successfully")
+	logger.Info("reconciled ziti access policy", "policyID", policy.Status.ID, "resolvedIdentityCount", policy.Status.ResolvedIdentityCount, "resolvedServiceCount", policy.Status.ResolvedServiceCount)
+	EmitEvent(r.Recorder, &policy, corev1.EventTypeNormal, "PolicyReconciled", "ZitiAccessPolicy reconciled successfully")
 	return ctrl.Result{}, nil
 }
 
@@ -151,6 +152,7 @@ func (r *ZitiAccessPolicyReconciler) resolveSelectorCounts(ctx context.Context, 
 }
 
 func (r *ZitiAccessPolicyReconciler) reconcileDelete(ctx context.Context, policy *zitiv1alpha1.ZitiAccessPolicy) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
 	if !slices.Contains(policy.GetFinalizers(), zitiAccessPolicyFinalizer) {
 		return ctrl.Result{}, nil
 	}
@@ -163,7 +165,8 @@ func (r *ZitiAccessPolicyReconciler) reconcileDelete(ctx context.Context, policy
 	if err := r.Update(ctx, policy); err != nil {
 		return ctrl.Result{}, err
 	}
-	EmitEvent(r.Recorder, policy, corev1.EventTypeNormal, "Deleted", "ZitiAccessPolicy backend state removed")
+	logger.Info("deleted ziti access policy backend state", "policyID", policy.Status.ID)
+	EmitEvent(r.Recorder, policy, corev1.EventTypeNormal, "PolicyDeleted", "ZitiAccessPolicy backend state removed")
 	return ctrl.Result{}, nil
 }
 

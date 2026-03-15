@@ -139,9 +139,9 @@ confirm policy cleanup.
 **Purpose**: Improvements that affect multiple user stories
 
 - [ ] T032 [P] Add an end-to-end MVP workflow smoke test with ready-state and delete-cleanup timing assertions in `test/e2e/miniziti_workflow_test.go`
-- [ ] T033 [P] Align sample manifests and quickstart instructions in `config/samples/kustomization.yaml`, `specs/001-miniziti-operator/contracts/miniziti-samples.yaml`, and `specs/001-miniziti-operator/quickstart.md`
-- [ ] T034 Harden controller logging and event reasons in `internal/controller/zitiidentity_controller.go`, `internal/controller/zitiservice_controller.go`, and `internal/controller/zitiaccesspolicy_controller.go`
-- [ ] T035 Run the documented validation flow and record the final command set in `Makefile` and `specs/001-miniziti-operator/quickstart.md`
+- [X] T033 [P] Align sample manifests and quickstart instructions in `config/samples/kustomization.yaml`, `specs/001-miniziti-operator/contracts/miniziti-samples.yaml`, and `specs/001-miniziti-operator/quickstart.md`
+- [X] T034 Harden controller logging and event reasons in `internal/controller/zitiidentity_controller.go`, `internal/controller/zitiservice_controller.go`, and `internal/controller/zitiaccesspolicy_controller.go`
+- [X] T035 Run the documented validation flow and record the final command set in `Makefile` and `specs/001-miniziti-operator/quickstart.md`
 
 ---
 

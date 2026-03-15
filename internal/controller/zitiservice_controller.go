@@ -94,7 +94,8 @@ func (r *ZitiServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	EmitEvent(r.Recorder, &service, corev1.EventTypeNormal, "Reconciled", "ZitiService reconciled successfully")
+	logger.Info("reconciled ziti service", "serviceID", service.Status.ID, "interceptConfigID", service.Status.ConfigIDs.Intercept, "hostConfigID", service.Status.ConfigIDs.Host)
+	EmitEvent(r.Recorder, &service, corev1.EventTypeNormal, "ServiceReconciled", "ZitiService reconciled successfully")
 	return ctrl.Result{}, nil
 }
 
@@ -132,6 +133,7 @@ func (r *ZitiServiceReconciler) reconcileConfig(
 }
 
 func (r *ZitiServiceReconciler) reconcileDelete(ctx context.Context, service *zitiv1alpha1.ZitiService) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
 	if !slices.Contains(service.GetFinalizers(), zitiServiceFinalizer) {
 		return ctrl.Result{}, nil
 	}
@@ -154,7 +156,8 @@ func (r *ZitiServiceReconciler) reconcileDelete(ctx context.Context, service *zi
 	if err := r.Update(ctx, service); err != nil {
 		return ctrl.Result{}, err
 	}
-	EmitEvent(r.Recorder, service, corev1.EventTypeNormal, "Deleted", "ZitiService backend state removed")
+	logger.Info("deleted ziti service backend state", "serviceID", service.Status.ID, "interceptConfigID", service.Status.ConfigIDs.Intercept, "hostConfigID", service.Status.ConfigIDs.Host)
+	EmitEvent(r.Recorder, service, corev1.EventTypeNormal, "ServiceDeleted", "ZitiService backend state removed")
 	return ctrl.Result{}, nil
 }
 

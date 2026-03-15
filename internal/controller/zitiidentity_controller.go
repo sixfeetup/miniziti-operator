@@ -98,7 +98,8 @@ func (r *ZitiIdentityReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, err
 	}
 
-	EmitEvent(r.Recorder, &identity, corev1.EventTypeNormal, "Reconciled", "ZitiIdentity reconciled successfully")
+	logger.Info("reconciled ziti identity", "identityID", identity.Status.ID, "jwtSecretName", identity.Status.JWTSecretName)
+	EmitEvent(r.Recorder, &identity, corev1.EventTypeNormal, "IdentityReconciled", "ZitiIdentity reconciled successfully")
 	return ctrl.Result{}, nil
 }
 
@@ -127,6 +128,7 @@ func (r *ZitiIdentityReconciler) reconcileIdentity(
 }
 
 func (r *ZitiIdentityReconciler) reconcileDelete(ctx context.Context, identity *zitiv1alpha1.ZitiIdentity) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
 	if !slices.Contains(identity.GetFinalizers(), zitiIdentityFinalizer) {
 		return ctrl.Result{}, nil
 	}
@@ -143,7 +145,8 @@ func (r *ZitiIdentityReconciler) reconcileDelete(ctx context.Context, identity *
 	if err := r.Update(ctx, identity); err != nil {
 		return ctrl.Result{}, err
 	}
-	EmitEvent(r.Recorder, identity, corev1.EventTypeNormal, "Deleted", "ZitiIdentity backend state removed")
+	logger.Info("deleted ziti identity backend state", "identityID", identity.Status.ID, "jwtSecretName", identity.Status.JWTSecretName)
+	EmitEvent(r.Recorder, identity, corev1.EventTypeNormal, "IdentityDeleted", "ZitiIdentity backend state removed")
 	return ctrl.Result{}, nil
 }
 

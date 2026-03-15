@@ -2,6 +2,7 @@ apiVersion: ziti.sixfeetup.com/v1alpha1
 kind: ZitiService
 metadata:
   name: argocd
+  namespace: default
 spec:
   name: argocd
   roleAttributes:

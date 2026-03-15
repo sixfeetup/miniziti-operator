@@ -65,69 +65,17 @@ make run
 
 ## 6. Apply sample resources
 
-Create one identity, one service, and one access policy to exercise the MVP
-workflow:
-
-```yaml
-apiVersion: ziti.sixfeetup.com/v1alpha1
-kind: ZitiIdentity
-metadata:
-  name: alice
-  namespace: default
-spec:
-  name: alice@example.com
-  type: User
-  roleAttributes:
-    - employee
-    - devops
-  enrollment:
-    createJwtSecret: true
-    jwtSecretName: alice-ziti-jwt
----
-apiVersion: ziti.sixfeetup.com/v1alpha1
-kind: ZitiService
-metadata:
-  name: argocd
-  namespace: default
-spec:
-  name: argocd
-  roleAttributes:
-    - argocd
-  configs:
-    intercept:
-      protocols:
-        - tcp
-      addresses:
-        - argocd.ziti
-      portRanges:
-        - low: 443
-          high: 443
-    host:
-      protocol: tcp
-      address: argocd-server.argocd.svc.cluster.local
-      port: 443
----
-apiVersion: ziti.sixfeetup.com/v1alpha1
-kind: ZitiAccessPolicy
-metadata:
-  name: argocd-devops-dial
-  namespace: default
-spec:
-  type: Dial
-  identitySelector:
-    matchRoleAttributes:
-      - devops
-  serviceSelector:
-    matchNames:
-      - argocd
-```
-
-Apply the sample manifest and inspect readiness:
+The repository keeps the Kustomize samples in `config/samples/` and the
+contract bundle in `specs/001-miniziti-operator/contracts/miniziti-samples.yaml`
+in sync. Use either source to exercise the MVP workflow:
 
 ```bash
+kubectl apply -k config/samples
 kubectl apply -f specs/001-miniziti-operator/contracts/miniziti-samples.yaml
 kubectl get zitiidentities,zitiservices,zitiaccesspolicies -A
-kubectl describe zitiidentity alice
+kubectl describe zitiidentity alice -n default
+kubectl describe zitiservice argocd -n default
+kubectl describe zitiaccesspolicy argocd-devops-dial -n default
 ```
 
 In the sample policy, `serviceSelector.matchNames: [argocd]` matches the
@@ -136,10 +84,13 @@ OpenZiti service name declared in `ZitiService.spec.name`.
 ## 7. Run the test suites
 
 ```bash
-go test ./...
+make validate
 ```
 
-Focus test coverage on:
+The validation flow runs code generation, manifest generation, formatting,
+`go vet`, and the full Go test suite with envtest assets.
+
+Focus coverage on:
 
 - create, update, retry, and delete reconciliation
 - finalizer cleanup of operator-owned backend objects
