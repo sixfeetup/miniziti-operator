@@ -1,3 +1,4 @@
 resources:
 - bases/ziti.sixfeetup.com_zitiidentities.yaml
 - bases/ziti.sixfeetup.com_zitiservices.yaml
+- bases/ziti.sixfeetup.com_zitiaccesspolicies.yaml

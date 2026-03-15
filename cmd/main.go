@@ -39,6 +39,7 @@ import (
 	"example.com/miniziti-operator/internal/controller"
 	openziticlient "example.com/miniziti-operator/internal/openziti/client"
 	identityservice "example.com/miniziti-operator/internal/openziti/identity"
+	policyservice "example.com/miniziti-operator/internal/openziti/policy"
 	zitiservice "example.com/miniziti-operator/internal/openziti/service"
 	// +kubebuilder:scaffold:imports
 )
@@ -197,6 +198,15 @@ func main() {
 		ServiceManager: zitiservice.NewService(openziticlient.New()),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ZitiService")
+		os.Exit(1)
+	}
+	if err = (&controller.ZitiAccessPolicyReconciler{
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		Recorder:      mgr.GetEventRecorderFor("zitiaccesspolicy-controller"),
+		PolicyService: policyservice.NewService(openziticlient.New()),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ZitiAccessPolicy")
 		os.Exit(1)
 	}
 

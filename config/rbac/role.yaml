@@ -26,6 +26,7 @@ rules:
 - apiGroups:
   - ziti.sixfeetup.com
   resources:
+  - zitiaccesspolicies
   - zitiidentities
   - zitiservices
   verbs:
@@ -39,6 +40,7 @@ rules:
 - apiGroups:
   - ziti.sixfeetup.com
   resources:
+  - zitiaccesspolicies/finalizers
   - zitiidentities/finalizers
   - zitiservices/finalizers
   verbs:
@@ -46,6 +48,7 @@ rules:
 - apiGroups:
   - ziti.sixfeetup.com
   resources:
+  - zitiaccesspolicies/status
   - zitiidentities/status
   - zitiservices/status
   verbs:

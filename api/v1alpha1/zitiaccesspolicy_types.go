@@ -47,6 +47,10 @@ type ZitiAccessPolicySpec struct {
 // ZitiAccessPolicyStatus defines the observed state of ZitiAccessPolicy.
 type ZitiAccessPolicyStatus struct {
 	CommonStatus `json:",inline"`
+	// +optional
+	ResolvedIdentityCount int32 `json:"resolvedIdentityCount,omitempty"`
+	// +optional
+	ResolvedServiceCount int32 `json:"resolvedServiceCount,omitempty"`
 }
 
 // +kubebuilder:object:root=true

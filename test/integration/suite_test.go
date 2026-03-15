@@ -38,6 +38,7 @@ import (
 	"example.com/miniziti-operator/internal/credentials"
 	openziti "example.com/miniziti-operator/internal/openziti/client"
 	identityservice "example.com/miniziti-operator/internal/openziti/identity"
+	policyservice "example.com/miniziti-operator/internal/openziti/policy"
 	serviceservice "example.com/miniziti-operator/internal/openziti/service"
 )
 
@@ -53,9 +54,12 @@ type fakeOpenZitiClient struct {
 	nextIdentity   int
 	nextService    int
 	nextConfig     int
+	nextPolicy     int
 	identities     map[string]*openziti.Identity
 	services       map[string]*openziti.Service
 	serviceConfigs map[string]*openziti.ServiceConfig
+	accessPolicies map[string]*openziti.AccessPolicy
+	policyFailures map[string]int
 }
 
 func newFakeOpenZitiClient() *fakeOpenZitiClient {
@@ -63,9 +67,12 @@ func newFakeOpenZitiClient() *fakeOpenZitiClient {
 		nextIdentity:   1,
 		nextService:    1,
 		nextConfig:     1,
+		nextPolicy:     1,
 		identities:     map[string]*openziti.Identity{},
 		services:       map[string]*openziti.Service{},
 		serviceConfigs: map[string]*openziti.ServiceConfig{},
+		accessPolicies: map[string]*openziti.AccessPolicy{},
+		policyFailures: map[string]int{},
 	}
 }
 
@@ -231,24 +238,68 @@ func (f *fakeOpenZitiClient) DeleteConfig(_ context.Context, id string) error {
 	return nil
 }
 
-func (f *fakeOpenZitiClient) GetAccessPolicy(context.Context, string) (*openziti.AccessPolicy, error) {
+func (f *fakeOpenZitiClient) GetAccessPolicy(_ context.Context, id string) (*openziti.AccessPolicy, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if policy, ok := f.accessPolicies[id]; ok {
+		copy := *policy
+		copy.IdentityRoles = append([]string(nil), policy.IdentityRoles...)
+		copy.ServiceRoles = append([]string(nil), policy.ServiceRoles...)
+		copy.IdentityRolesRaw = append([]string(nil), policy.IdentityRolesRaw...)
+		copy.ServiceRolesRaw = append([]string(nil), policy.ServiceRolesRaw...)
+		return &copy, nil
+	}
 	return nil, nil
 }
 
-func (f *fakeOpenZitiClient) FindAccessPolicyByName(context.Context, string) (*openziti.AccessPolicy, error) {
+func (f *fakeOpenZitiClient) FindAccessPolicyByName(_ context.Context, name string) (*openziti.AccessPolicy, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, policy := range f.accessPolicies {
+		if policy.Name == name {
+			copy := *policy
+			copy.IdentityRoles = append([]string(nil), policy.IdentityRoles...)
+			copy.ServiceRoles = append([]string(nil), policy.ServiceRoles...)
+			copy.IdentityRolesRaw = append([]string(nil), policy.IdentityRolesRaw...)
+			copy.ServiceRolesRaw = append([]string(nil), policy.ServiceRolesRaw...)
+			return &copy, nil
+		}
+	}
 	return nil, nil
 }
 
-func (f *fakeOpenZitiClient) CreateAccessPolicy(context.Context, openziti.AccessPolicy) (*openziti.AccessPolicy, error) {
-	return nil, openziti.ErrNotImplemented
+func (f *fakeOpenZitiClient) CreateAccessPolicy(_ context.Context, policy openziti.AccessPolicy) (*openziti.AccessPolicy, error) {
+	if err := f.fakePolicyFailure(policy.Name); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	policy.ID = fmt.Sprintf("policy-%d", f.nextPolicy)
+	f.nextPolicy++
+	copy := cloneAccessPolicy(policy)
+	f.accessPolicies[policy.ID] = &copy
+	return &copy, nil
 }
 
-func (f *fakeOpenZitiClient) UpdateAccessPolicy(context.Context, openziti.AccessPolicy) (*openziti.AccessPolicy, error) {
-	return nil, openziti.ErrNotImplemented
+func (f *fakeOpenZitiClient) UpdateAccessPolicy(_ context.Context, policy openziti.AccessPolicy) (*openziti.AccessPolicy, error) {
+	if err := f.fakePolicyFailure(policy.Name); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.accessPolicies[policy.ID]; !ok {
+		return nil, nil
+	}
+	copy := cloneAccessPolicy(policy)
+	f.accessPolicies[policy.ID] = &copy
+	return &copy, nil
 }
 
-func (f *fakeOpenZitiClient) DeleteAccessPolicy(context.Context, string) error {
-	return openziti.ErrNotImplemented
+func (f *fakeOpenZitiClient) DeleteAccessPolicy(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.accessPolicies, id)
+	return nil
 }
 
 func fakeIdentityFailure(name string) error {
@@ -268,6 +319,22 @@ func fakeServiceFailure(name string) error {
 func fakeConfigFailure(name string) error {
 	if strings.Contains(name, "fail-config") || strings.Contains(name, "fail-event") {
 		return fmt.Errorf("simulated config failure for %s", name)
+	}
+	return nil
+}
+
+func (f *fakeOpenZitiClient) fakePolicyFailure(name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if strings.Contains(name, "fail-status") || strings.Contains(name, "fail-event") {
+		return fmt.Errorf("simulated policy failure for %s", name)
+	}
+	if strings.Contains(name, "retry") {
+		failures := f.policyFailures[name]
+		if failures == 0 {
+			f.policyFailures[name] = 1
+			return fmt.Errorf("simulated transient policy failure for %s", name)
+		}
 	}
 	return nil
 }
@@ -303,6 +370,14 @@ func clonePayload(payload map[string]any) map[string]any {
 		}
 	}
 	return copy
+}
+
+func cloneAccessPolicy(policy openziti.AccessPolicy) openziti.AccessPolicy {
+	policy.IdentityRoles = append([]string(nil), policy.IdentityRoles...)
+	policy.ServiceRoles = append([]string(nil), policy.ServiceRoles...)
+	policy.IdentityRolesRaw = append([]string(nil), policy.IdentityRolesRaw...)
+	policy.ServiceRolesRaw = append([]string(nil), policy.ServiceRolesRaw...)
+	return policy
 }
 
 func TestControllers(t *testing.T) {
@@ -351,6 +426,14 @@ var _ = BeforeSuite(func() {
 		ServiceManager: serviceservice.NewService(fakeClient),
 	}
 	Expect(serviceReconciler.SetupWithManager(mgr)).To(Succeed())
+
+	policyReconciler := &controller.ZitiAccessPolicyReconciler{
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		Recorder:      mgr.GetEventRecorderFor("zitiaccesspolicy-controller"),
+		PolicyService: policyservice.NewService(fakeClient),
+	}
+	Expect(policyReconciler.SetupWithManager(mgr)).To(Succeed())
 
 	go func() {
 		defer GinkgoRecover()

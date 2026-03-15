@@ -126,9 +126,9 @@ confirm policy cleanup.
 
 - [X] T027 [P] [US3] Define the `ZitiAccessPolicy` API schema and validation in `api/v1alpha1/zitiaccesspolicy_types.go`
 - [X] T028 [P] [US3] Implement selector compilation and backend policy sync in `internal/openziti/policy/service.go` and `internal/openziti/policy/selectors.go`
-- [ ] T029 [US3] Implement the `ZitiAccessPolicy` reconciler in `internal/controller/zitiaccesspolicy_controller.go`
-- [ ] T030 [US3] Surface selector resolution and policy status feedback in `api/v1alpha1/zitiaccesspolicy_types.go` and `internal/controller/zitiaccesspolicy_controller.go`
-- [ ] T031 [US3] Generate the access policy CRD and add policy samples in `config/crd/bases/ziti.sixfeetup.com_zitiaccesspolicies.yaml` and `config/samples/ziti_v1alpha1_zitiaccesspolicy.yaml`
+- [X] T029 [US3] Implement the `ZitiAccessPolicy` reconciler in `internal/controller/zitiaccesspolicy_controller.go`
+- [X] T030 [US3] Surface selector resolution and policy status feedback in `api/v1alpha1/zitiaccesspolicy_types.go` and `internal/controller/zitiaccesspolicy_controller.go`
+- [X] T031 [US3] Generate the access policy CRD and add policy samples in `config/crd/bases/ziti.sixfeetup.com_zitiaccesspolicies.yaml` and `config/samples/ziti_v1alpha1_zitiaccesspolicy.yaml`
 
 **Checkpoint**: All user stories should now be independently functional
 
