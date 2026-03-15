@@ -119,8 +119,8 @@ confirm policy cleanup.
 
 ### Tests for User Story 3 (REQUIRED) ⚠️
 
-- [ ] T025 [US3] Add selector-based create and update reconcile tests with status and event assertions in `test/integration/zitiaccesspolicy_controller_test.go`
-- [ ] T026 [US3] Add zero-match, retry, delete, failure-status, and failure-event tests in `test/integration/zitiaccesspolicy_controller_test.go`
+- [X] T025 [US3] Add selector-based create and update reconcile tests with status and event assertions in `test/integration/zitiaccesspolicy_controller_test.go`
+- [X] T026 [US3] Add zero-match, retry, delete, failure-status, and failure-event tests in `test/integration/zitiaccesspolicy_controller_test.go`
 
 ### Implementation for User Story 3
 
