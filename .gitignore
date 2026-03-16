@@ -16,3 +16,4 @@ bin/
 dist/
 tmp-kb/
 vendor/
+.kubeconfig

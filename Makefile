@@ -13,6 +13,7 @@ endif
 # scaffolded by default. However, you might want to replace it to use other
 # tools. (i.e. podman)
 CONTAINER_TOOL ?= docker
+HELM ?= helm
 
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
@@ -70,29 +71,109 @@ validate: manifests generate fmt vet setup-envtest ## Run the documented validat
 # CertManager is installed by default; skip with:
 # - CERT_MANAGER_INSTALL_SKIP=true
 KIND_CLUSTER ?= miniziti-operator-test-e2e
+KIND_KUBECONFIG ?= $(shell pwd)/.kubeconfig
+OPENZITI_NAMESPACE ?= ziti
+OPENZITI_RELEASE ?= ziti-controller
+OPENZITI_CHART ?= openziti/ziti-controller
+OPENZITI_CHART_REPO ?= https://openziti.io/helm-charts/
+OPENZITI_VALUES ?= hack/kind/ziti-controller-values.yaml
+OPENZITI_ADMIN_SECRET ?= $(OPENZITI_RELEASE)-admin-secret
+OPENZITI_MGMT_URL ?= https://$(OPENZITI_RELEASE)-mgmt.$(OPENZITI_NAMESPACE).svc.cluster.local/edge/management/v1
+OPERATOR_NAMESPACE ?= ziti
+MANAGEMENT_SECRET_NAME ?= openziti-management
+CERT_MANAGER_VERSION ?= v1.20.0
+TRUST_MANAGER_VERSION ?= v0.22.0
+TRUST_MANAGER_TRUST_NAMESPACE ?= $(OPENZITI_NAMESPACE)
 
 .PHONY: setup-test-e2e
-setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
+setup-test-e2e: kind-create-local ## Set up a Kind cluster for e2e tests using the repo-local kubeconfig.
+
+.PHONY: kind-create-local
+kind-create-local: ## Create the Kind cluster using a repo-local kubeconfig instead of the global current context.
 	@command -v $(KIND) >/dev/null 2>&1 || { \
 		echo "Kind is not installed. Please install Kind manually."; \
 		exit 1; \
 	}
-	@case "$$($(KIND) get clusters)" in \
-		*"$(KIND_CLUSTER)"*) \
-			echo "Kind cluster '$(KIND_CLUSTER)' already exists. Skipping creation." ;; \
-		*) \
-			echo "Creating Kind cluster '$(KIND_CLUSTER)'..."; \
-			$(KIND) create cluster --name $(KIND_CLUSTER) ;; \
-	esac
+	@mkdir -p "$$(dirname "$(KIND_KUBECONFIG)")"
+	@if $(KIND) get kubeconfig --name "$(KIND_CLUSTER)" > /dev/null 2>&1; then \
+		echo "Writing kubeconfig for existing Kind cluster '$(KIND_CLUSTER)' to $(KIND_KUBECONFIG)..."; \
+		$(KIND) get kubeconfig --name "$(KIND_CLUSTER)" > "$(KIND_KUBECONFIG)"; \
+	else \
+		echo "Creating Kind cluster '$(KIND_CLUSTER)' with kubeconfig $(KIND_KUBECONFIG)..."; \
+		KUBECONFIG=$(KIND_KUBECONFIG) $(KIND) create cluster --name $(KIND_CLUSTER); \
+	fi
+
+.PHONY: kind-openziti-install
+kind-openziti-install: kind-create-local ## Install a real OpenZiti controller into the local Kind cluster via Helm.
+	@command -v $(HELM) >/dev/null 2>&1 || { \
+		echo "Helm is not installed. Please install Helm manually."; \
+		exit 1; \
+	}
+	@$(HELM) repo add jetstack https://charts.jetstack.io >/dev/null 2>&1 || true
+	@$(HELM) repo add openziti $(OPENZITI_CHART_REPO) >/dev/null 2>&1 || true
+	KUBECONFIG=$(KIND_KUBECONFIG) $(HELM) repo update jetstack
+	KUBECONFIG=$(KIND_KUBECONFIG) $(HELM) repo update openziti
+	KUBECONFIG=$(KIND_KUBECONFIG) $(KUBECTL) create namespace $(OPENZITI_NAMESPACE) --dry-run=client -o yaml | KUBECONFIG=$(KIND_KUBECONFIG) $(KUBECTL) apply -f -
+	KUBECONFIG=$(KIND_KUBECONFIG) $(HELM) upgrade --install cert-manager jetstack/cert-manager \
+		--namespace cert-manager \
+		--create-namespace \
+		--version $(CERT_MANAGER_VERSION) \
+		--set crds.enabled=true \
+		--wait \
+		--timeout 10m
+	KUBECONFIG=$(KIND_KUBECONFIG) $(HELM) upgrade --install trust-manager jetstack/trust-manager \
+		--namespace cert-manager \
+		--create-namespace \
+		--version $(TRUST_MANAGER_VERSION) \
+		--set crds.enabled=true \
+		--set app.trust.namespace=$(TRUST_MANAGER_TRUST_NAMESPACE) \
+		--wait \
+		--timeout 10m
+	KUBECONFIG=$(KIND_KUBECONFIG) $(HELM) upgrade --install $(OPENZITI_RELEASE) $(OPENZITI_CHART) \
+		--namespace $(OPENZITI_NAMESPACE) \
+		--create-namespace \
+		--values $(OPENZITI_VALUES) \
+		--wait \
+		--timeout 15m
+
+.PHONY: kind-openziti-sync-management-secret
+kind-openziti-sync-management-secret: ## Copy the OpenZiti admin credentials into the operator's Secret format.
+	KUBECONFIG=$(KIND_KUBECONFIG) \
+	OPENZITI_NAMESPACE=$(OPENZITI_NAMESPACE) \
+	OPENZITI_RELEASE=$(OPENZITI_RELEASE) \
+	OPENZITI_ADMIN_SECRET=$(OPENZITI_ADMIN_SECRET) \
+	OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) \
+	MANAGEMENT_SECRET_NAME=$(MANAGEMENT_SECRET_NAME) \
+	OPENZITI_MGMT_URL=$(OPENZITI_MGMT_URL) \
+	./hack/kind/sync-openziti-management-secret.sh
+
+.PHONY: kind-openziti-uninstall
+kind-openziti-uninstall: ## Remove the local OpenZiti controller release from the Kind cluster.
+	-KUBECONFIG=$(KIND_KUBECONFIG) $(HELM) uninstall $(OPENZITI_RELEASE) --namespace $(OPENZITI_NAMESPACE)
+	-KUBECONFIG=$(KIND_KUBECONFIG) $(HELM) uninstall trust-manager --namespace cert-manager
+	-KUBECONFIG=$(KIND_KUBECONFIG) $(HELM) uninstall cert-manager --namespace cert-manager
+	-KUBECONFIG=$(KIND_KUBECONFIG) $(KUBECTL) delete namespace $(OPENZITI_NAMESPACE) --ignore-not-found
+	-KUBECONFIG=$(KIND_KUBECONFIG) $(KUBECTL) delete namespace cert-manager --ignore-not-found
 
 .PHONY: test-e2e
-test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
-	KIND=$(KIND) KIND_CLUSTER=$(KIND_CLUSTER) go test -tags=e2e ./test/e2e/ -v -ginkgo.v
+test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests against the repo-local Kind kubeconfig.
+	KUBECONFIG=$(KIND_KUBECONFIG) KIND=$(KIND) KIND_CLUSTER=$(KIND_CLUSTER) go test -tags=e2e ./test/e2e/ -v -ginkgo.v
 	$(MAKE) cleanup-test-e2e
 
 .PHONY: cleanup-test-e2e
-cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
-	@$(KIND) delete cluster --name $(KIND_CLUSTER)
+cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests and its repo-local kubeconfig entry.
+	@KUBECONFIG=$(KIND_KUBECONFIG) $(KIND) delete cluster --name $(KIND_CLUSTER)
+
+.PHONY: kind-load-operator-image
+kind-load-operator-image: ## Load the locally built operator image into the repo-local Kind cluster.
+	@command -v $(KIND) >/dev/null 2>&1 || { \
+		echo "Kind is not installed. Please install Kind manually."; \
+		exit 1; \
+	}
+	KUBECONFIG=$(KIND_KUBECONFIG) $(KIND) load docker-image ${IMG} --name $(KIND_CLUSTER)
+
+.PHONY: deploy-kind
+deploy-kind: kind-load-operator-image deploy ## Deploy controller to the local Kind cluster after loading the image.
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
@@ -157,23 +238,23 @@ ifndef ignore-not-found
 endif
 
 .PHONY: install
-install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
+install: manifests kustomize ## Install CRDs into the K8s cluster specified by $(KIND_KUBECONFIG).
 	@out="$$( "$(KUSTOMIZE)" build config/crd 2>/dev/null || true )"; \
-	if [ -n "$$out" ]; then echo "$$out" | "$(KUBECTL)" apply -f -; else echo "No CRDs to install; skipping."; fi
+	if [ -n "$$out" ]; then echo "$$out" | KUBECONFIG="$(KIND_KUBECONFIG)" "$(KUBECTL)" apply -f -; else echo "No CRDs to install; skipping."; fi
 
 .PHONY: uninstall
-uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
+uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified by $(KIND_KUBECONFIG). Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	@out="$$( "$(KUSTOMIZE)" build config/crd 2>/dev/null || true )"; \
-	if [ -n "$$out" ]; then echo "$$out" | "$(KUBECTL)" delete --ignore-not-found=$(ignore-not-found) -f -; else echo "No CRDs to delete; skipping."; fi
+	if [ -n "$$out" ]; then echo "$$out" | KUBECONFIG="$(KIND_KUBECONFIG)" "$(KUBECTL)" delete --ignore-not-found=$(ignore-not-found) -f -; else echo "No CRDs to delete; skipping."; fi
 
 .PHONY: deploy
-deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
+deploy: manifests kustomize ## Deploy controller to the K8s cluster specified by $(KIND_KUBECONFIG).
 	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
-	"$(KUSTOMIZE)" build config/default | "$(KUBECTL)" apply -f -
+	"$(KUSTOMIZE)" build config/default | KUBECONFIG="$(KIND_KUBECONFIG)" "$(KUBECTL)" apply -f -
 
 .PHONY: undeploy
-undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	"$(KUSTOMIZE)" build config/default | "$(KUBECTL)" delete --ignore-not-found=$(ignore-not-found) -f -
+undeploy: kustomize ## Undeploy controller from the K8s cluster specified by $(KIND_KUBECONFIG). Call with ignore-not-found=true to ignore resource not found errors during deletion.
+	"$(KUSTOMIZE)" build config/default | KUBECONFIG="$(KIND_KUBECONFIG)" "$(KUBECTL)" delete --ignore-not-found=$(ignore-not-found) -f -
 
 ##@ Dependencies
 

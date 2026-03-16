@@ -35,12 +35,15 @@ Create a namespace for the operator and a Secret containing the only supported
 v1 management credential format: controller URL plus username/password:
 
 ```bash
-kubectl create namespace miniziti-system
-kubectl -n miniziti-system create secret generic openziti-management \
+kubectl create namespace ziti
+kubectl -n ziti create secret generic openziti-management \
   --from-literal=controllerUrl=https://ziti.example.com/edge/management/v1 \
   --from-literal=username=admin \
   --from-literal=password=change-me
 ```
+
+If the controller uses a private or self-signed management certificate, include
+the PEM trust bundle as `caBundle` in the same Secret.
 
 ## 4. Implement and validate the CRDs
 
@@ -67,7 +70,10 @@ make run
 
 The repository keeps the Kustomize samples in `config/samples/` and the
 contract bundle in `specs/001-miniziti-operator/contracts/miniziti-samples.yaml`
-in sync. Use either source to exercise the MVP workflow:
+in sync. The placeholder Secret manifest in
+`config/samples/openziti-management-secret.yaml` is reference-only; do not apply
+it over a working cluster Secret. Use either source to exercise the MVP
+workflow:
 
 ```bash
 kubectl apply -k config/samples

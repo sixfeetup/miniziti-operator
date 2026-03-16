@@ -37,6 +37,7 @@ import (
 
 	zitiv1alpha1 "example.com/miniziti-operator/api/v1alpha1"
 	"example.com/miniziti-operator/internal/controller"
+	"example.com/miniziti-operator/internal/credentials"
 	openziticlient "example.com/miniziti-operator/internal/openziti/client"
 	identityservice "example.com/miniziti-operator/internal/openziti/identity"
 	policyservice "example.com/miniziti-operator/internal/openziti/policy"
@@ -182,11 +183,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	managementSecretRef, err := credentials.SecretRefFromEnv()
+	if err != nil {
+		setupLog.Error(err, "unable to resolve OpenZiti management secret reference")
+		os.Exit(1)
+	}
+	managementConfigLoader := credentials.NewSecretConfigLoader(mgr.GetClient(), managementSecretRef)
+	openZitiClient := openziticlient.New(managementConfigLoader.Load)
+
 	if err = (&controller.ZitiIdentityReconciler{
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
 		Recorder:        mgr.GetEventRecorderFor("zitiidentity-controller"),
-		IdentityService: identityservice.NewService(openziticlient.New()),
+		IdentityService: identityservice.NewService(openZitiClient),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ZitiIdentity")
 		os.Exit(1)
@@ -195,7 +204,7 @@ func main() {
 		Client:         mgr.GetClient(),
 		Scheme:         mgr.GetScheme(),
 		Recorder:       mgr.GetEventRecorderFor("zitiservice-controller"),
-		ServiceManager: zitiservice.NewService(openziticlient.New()),
+		ServiceManager: zitiservice.NewService(openZitiClient),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ZitiService")
 		os.Exit(1)
@@ -204,7 +213,7 @@ func main() {
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
 		Recorder:      mgr.GetEventRecorderFor("zitiaccesspolicy-controller"),
-		PolicyService: policyservice.NewService(openziticlient.New()),
+		PolicyService: policyservice.NewService(openZitiClient),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ZitiAccessPolicy")
 		os.Exit(1)

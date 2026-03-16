@@ -1,0 +1,15 @@
+ingress-nginx:
+  enabled: false
+
+clientApi:
+  advertisedHost: ziti-controller-client.ziti.svc.cluster.local
+  advertisedPort: 443
+  service:
+    type: ClusterIP
+
+managementApi:
+  advertisedHost: ziti-controller-mgmt.ziti.svc.cluster.local
+  advertisedPort: 443
+  service:
+    enabled: true
+    type: ClusterIP

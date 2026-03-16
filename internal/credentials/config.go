@@ -17,6 +17,7 @@ limitations under the License.
 package credentials
 
 import (
+	"crypto/x509"
 	"fmt"
 	"net/url"
 	"strings"
@@ -29,6 +30,7 @@ const (
 	ControllerURLKey = "controllerUrl"
 	UsernameKey      = "username"
 	PasswordKey      = "password"
+	CABundleKey      = "caBundle"
 )
 
 // SecretRef identifies the namespaced Secret that stores management credentials.
@@ -47,6 +49,7 @@ type ManagementConfig struct {
 	ControllerURL string
 	Username      string
 	Password      string
+	CABundlePEM   []byte
 }
 
 // LoadManagementConfig extracts and validates management credentials from a Secret.
@@ -59,6 +62,7 @@ func LoadManagementConfig(secret *corev1.Secret) (ManagementConfig, error) {
 		ControllerURL: strings.TrimSpace(string(secret.Data[ControllerURLKey])),
 		Username:      strings.TrimSpace(string(secret.Data[UsernameKey])),
 		Password:      strings.TrimSpace(string(secret.Data[PasswordKey])),
+		CABundlePEM:   append([]byte(nil), secret.Data[CABundleKey]...),
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -85,6 +89,12 @@ func (c ManagementConfig) Validate() error {
 	}
 	if c.Password == "" {
 		return fmt.Errorf("missing %q", PasswordKey)
+	}
+	if len(c.CABundlePEM) > 0 {
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(c.CABundlePEM) {
+			return fmt.Errorf("%q must contain valid PEM certificates", CABundleKey)
+		}
 	}
 	return nil
 }
