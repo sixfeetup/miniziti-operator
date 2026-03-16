@@ -23,9 +23,12 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/go-openapi/strfmt"
 	"github.com/openziti/edge-api/rest_management_api_client"
 	configapi "github.com/openziti/edge-api/rest_management_api_client/config"
+	enrollmentapi "github.com/openziti/edge-api/rest_management_api_client/enrollment"
 	identityapi "github.com/openziti/edge-api/rest_management_api_client/identity"
 	serviceapi "github.com/openziti/edge-api/rest_management_api_client/service"
 	servicepolicyapi "github.com/openziti/edge-api/rest_management_api_client/service_policy"
@@ -237,19 +240,31 @@ func (c *ManagementClient) DeleteIdentity(ctx context.Context, id string) error 
 
 func (c *ManagementClient) GetEnrollmentJWT(ctx context.Context, id string) (string, error) {
 	return useAuthenticatedClient(ctx, c, c.loadCurrentConfig, func(api *rest_management_api_client.ZitiEdgeManagement) (string, error) {
-		resp, err := api.Identity.DetailIdentity(identityapi.NewDetailIdentityParamsWithContext(ctx).WithID(id), nil)
+		enrollments, err := api.Identity.GetIdentityEnrollments(identityapi.NewGetIdentityEnrollmentsParamsWithContext(ctx).WithID(id), nil)
 		if err != nil {
-			return "", wrapAPICallError("get identity enrollment jwt", err)
+			return "", wrapAPICallError("list identity enrollments", err)
 		}
-		if resp.Payload == nil || resp.Payload.Data == nil || resp.Payload.Data.Enrollment == nil {
-			return "", fmt.Errorf("identity %s has no enrollment data", id)
+		if jwt := enrollmentJWTFromList(enrollments.Payload); strings.TrimSpace(jwt) != "" {
+			return jwt, nil
 		}
-		if resp.Payload.Data.Enrollment.Ott != nil && strings.TrimSpace(resp.Payload.Data.Enrollment.Ott.JWT) != "" {
-			return strings.TrimSpace(resp.Payload.Data.Enrollment.Ott.JWT), nil
+
+		created, err := c.createOTTEnrollmentWithAPI(ctx, api, id)
+		if err != nil {
+			if isStatusCode(err, 409) {
+				enrollments, listErr := api.Identity.GetIdentityEnrollments(identityapi.NewGetIdentityEnrollmentsParamsWithContext(ctx).WithID(id), nil)
+				if listErr != nil {
+					return "", wrapAPICallError("list identity enrollments", listErr)
+				}
+				if jwt := enrollmentJWTFromList(enrollments.Payload); strings.TrimSpace(jwt) != "" {
+					return jwt, nil
+				}
+			}
+			return "", err
 		}
-		if resp.Payload.Data.Enrollment.Ottca != nil && strings.TrimSpace(resp.Payload.Data.Enrollment.Ottca.JWT) != "" {
-			return strings.TrimSpace(resp.Payload.Data.Enrollment.Ottca.JWT), nil
+		if created != nil && created.Data != nil && strings.TrimSpace(created.Data.JWT) != "" {
+			return strings.TrimSpace(created.Data.JWT), nil
 		}
+
 		return "", fmt.Errorf("identity %s has no enrollment jwt", id)
 	})
 }
@@ -737,6 +752,54 @@ func extractCreatedID(createEnvelope *rest_model.CreateEnvelope) (string, error)
 		return "", fmt.Errorf("create response did not include an object id")
 	}
 	return strings.TrimSpace(createEnvelope.Data.ID), nil
+}
+
+func enrollmentJWTFromList(envelope *rest_model.ListEnrollmentsEnvelope) string {
+	if envelope == nil {
+		return ""
+	}
+	for _, item := range envelope.Data {
+		if item == nil || item.Method == nil {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(*item.Method), rest_model.EnrollmentCreateMethodOtt) &&
+			strings.TrimSpace(item.JWT) != "" {
+			return strings.TrimSpace(item.JWT)
+		}
+	}
+	return ""
+}
+
+func (c *ManagementClient) createOTTEnrollmentWithAPI(
+	ctx context.Context,
+	api *rest_management_api_client.ZitiEdgeManagement,
+	identityID string,
+) (*rest_model.DetailEnrollmentEnvelope, error) {
+	method := rest_model.EnrollmentCreateMethodOtt
+	expiresAt := strfmt.DateTime(time.Now().UTC().Add(30 * time.Minute))
+	resp, err := api.Enrollment.CreateEnrollment(
+		enrollmentapi.NewCreateEnrollmentParamsWithContext(ctx).WithEnrollment(&rest_model.EnrollmentCreate{
+			IdentityID: &identityID,
+			Method:     &method,
+			ExpiresAt:  &expiresAt,
+		}),
+		nil,
+	)
+	if err != nil {
+		return nil, wrapAPICallError("create ott enrollment", err)
+	}
+	id, err := extractCreatedID(resp.Payload)
+	if err != nil {
+		return nil, err
+	}
+	detail, err := api.Enrollment.DetailEnrollment(
+		enrollmentapi.NewDetailEnrollmentParamsWithContext(ctx).WithID(id),
+		nil,
+	)
+	if err != nil {
+		return nil, wrapAPICallError("get ott enrollment", err)
+	}
+	return detail.Payload, nil
 }
 
 func (c *ManagementClient) resolveConfigTypeIDWithAPI(

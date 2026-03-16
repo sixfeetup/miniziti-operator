@@ -6,16 +6,16 @@ metadata:
 spec:
   name: argocd
   roleAttributes:
-  - argocd
+    - argocd
   configs:
     intercept:
       protocols:
-      - tcp
+        - tcp
       addresses:
-      - argocd.ziti
+        - argocd.ziti
       portRanges:
-      - low: 443
-        high: 443
+        - low: 443
+          high: 443
     host:
       protocol: tcp
       address: argocd-server.argocd.svc.cluster.local

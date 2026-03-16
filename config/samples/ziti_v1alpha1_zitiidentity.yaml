@@ -7,8 +7,8 @@ spec:
   name: alice@example.com
   type: User
   roleAttributes:
-  - employee
-  - devops
+    - employee
+    - devops
   enrollment:
     createJwtSecret: true
     jwtSecretName: alice-ziti-jwt

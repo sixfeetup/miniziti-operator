@@ -7,7 +7,7 @@ spec:
   type: Dial
   identitySelector:
     matchRoleAttributes:
-    - devops
+      - devops
   serviceSelector:
     matchNames:
-    - argocd
+      - argocd

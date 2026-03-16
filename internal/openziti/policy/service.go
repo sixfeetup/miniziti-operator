@@ -18,6 +18,7 @@ package policy
 
 import (
 	"context"
+	"strings"
 
 	zitiv1alpha1 "example.com/miniziti-operator/api/v1alpha1"
 	openziti "example.com/miniziti-operator/internal/openziti/client"
@@ -36,6 +37,11 @@ type DesiredPolicy struct {
 	Semantic         string
 }
 
+type ResolvedSelector struct {
+	IDs            []string
+	RoleAttributes []string
+}
+
 // Service coordinates ZitiAccessPolicy resources with the OpenZiti policy API.
 type Service struct {
 	client openziti.Client
@@ -47,19 +53,47 @@ func NewService(client openziti.Client) *Service {
 }
 
 // FromResource maps a ZitiAccessPolicy resource into the backend policy payload.
-func FromResource(resource *zitiv1alpha1.ZitiAccessPolicy) DesiredPolicy {
-	identityRoles := CompileSelector(resource.Spec.IdentitySelector)
-	serviceRoles := CompileSelector(resource.Spec.ServiceSelector)
-
+func FromResource(resource *zitiv1alpha1.ZitiAccessPolicy, identitySelector, serviceSelector ResolvedSelector) DesiredPolicy {
 	return DesiredPolicy{
 		Name:             resource.Name,
 		Type:             resource.Spec.Type,
-		IdentityRoles:    append([]string(nil), identityRoles...),
-		ServiceRoles:     append([]string(nil), serviceRoles...),
-		IdentityRolesRaw: append([]string(nil), identityRoles...),
-		ServiceRolesRaw:  append([]string(nil), serviceRoles...),
+		IdentityRoles:    selectorRoles(identitySelector),
+		ServiceRoles:     selectorRoles(serviceSelector),
+		IdentityRolesRaw: selectorRoles(identitySelector),
+		ServiceRolesRaw:  selectorRoles(serviceSelector),
 		Semantic:         semanticAnyOf,
 	}
+}
+
+func selectorRoles(selector ResolvedSelector) []string {
+	roles := make([]string, 0, len(selector.IDs)+len(selector.RoleAttributes))
+	seen := make(map[string]struct{}, len(selector.IDs)+len(selector.RoleAttributes))
+
+	for _, id := range selector.IDs {
+		expression := "@" + strings.TrimSpace(id)
+		if expression == "@" {
+			continue
+		}
+		if _, ok := seen[expression]; ok {
+			continue
+		}
+		seen[expression] = struct{}{}
+		roles = append(roles, expression)
+	}
+
+	for _, attribute := range selector.RoleAttributes {
+		expression := "#" + strings.TrimSpace(attribute)
+		if expression == "#" {
+			continue
+		}
+		if _, ok := seen[expression]; ok {
+			continue
+		}
+		seen[expression] = struct{}{}
+		roles = append(roles, expression)
+	}
+
+	return roles
 }
 
 func (s *Service) FindByName(ctx context.Context, name string) (*openziti.AccessPolicy, error) {

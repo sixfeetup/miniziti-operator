@@ -75,7 +75,7 @@ func (r *ZitiAccessPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return r.markFailed(ctx, &policy, err, "SelectorValidationFailed", false)
 	}
 
-	identityCount, serviceCount, err := r.resolveSelectorCounts(ctx, &policy)
+	identitySelector, serviceSelector, identityCount, serviceCount, err := r.resolveSelectors(ctx, &policy)
 	if err != nil {
 		return r.markFailed(ctx, &policy, err, "SelectorResolutionFailed", true)
 	}
@@ -89,7 +89,7 @@ func (r *ZitiAccessPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return r.markFailed(ctx, &policy, fmt.Errorf("service selector matched zero services"), "SelectorResolutionFailed", false)
 	}
 
-	desired := policyservice.FromResource(&policy)
+	desired := policyservice.FromResource(&policy, identitySelector, serviceSelector)
 	backendPolicy, err := r.reconcilePolicy(ctx, &policy, desired)
 	if err != nil {
 		return r.markFailed(ctx, &policy, err, "PolicySyncFailed", true)
@@ -123,31 +123,46 @@ func (r *ZitiAccessPolicyReconciler) reconcilePolicy(
 	return r.PolicyService.Create(ctx, desired)
 }
 
-func (r *ZitiAccessPolicyReconciler) resolveSelectorCounts(ctx context.Context, policy *zitiv1alpha1.ZitiAccessPolicy) (int, int, error) {
+func (r *ZitiAccessPolicyReconciler) resolveSelectors(
+	ctx context.Context,
+	policy *zitiv1alpha1.ZitiAccessPolicy,
+) (policyservice.ResolvedSelector, policyservice.ResolvedSelector, int, int, error) {
 	var identities zitiv1alpha1.ZitiIdentityList
 	if err := r.List(ctx, &identities, client.InNamespace(policy.Namespace)); err != nil {
-		return 0, 0, err
+		return policyservice.ResolvedSelector{}, policyservice.ResolvedSelector{}, 0, 0, err
 	}
 	var services zitiv1alpha1.ZitiServiceList
 	if err := r.List(ctx, &services, client.InNamespace(policy.Namespace)); err != nil {
-		return 0, 0, err
+		return policyservice.ResolvedSelector{}, policyservice.ResolvedSelector{}, 0, 0, err
 	}
 
+	identitySelector := policyservice.ResolvedSelector{
+		RoleAttributes: append([]string(nil), policy.Spec.IdentitySelector.MatchRoleAttributes...),
+	}
 	identityCount := 0
 	for i := range identities.Items {
 		if matchesSelector(policy.Spec.IdentitySelector, identities.Items[i].Spec.Name, identities.Items[i].Spec.RoleAttributes) {
 			identityCount++
 		}
+		if matchesNames(policy.Spec.IdentitySelector.MatchNames, identities.Items[i].Spec.Name) && identities.Items[i].Status.ID != "" {
+			identitySelector.IDs = append(identitySelector.IDs, identities.Items[i].Status.ID)
+		}
 	}
 
+	serviceSelector := policyservice.ResolvedSelector{
+		RoleAttributes: append([]string(nil), policy.Spec.ServiceSelector.MatchRoleAttributes...),
+	}
 	serviceCount := 0
 	for i := range services.Items {
 		if matchesSelector(policy.Spec.ServiceSelector, services.Items[i].Spec.Name, services.Items[i].Spec.RoleAttributes) {
 			serviceCount++
 		}
+		if matchesNames(policy.Spec.ServiceSelector.MatchNames, services.Items[i].Spec.Name) && services.Items[i].Status.ID != "" {
+			serviceSelector.IDs = append(serviceSelector.IDs, services.Items[i].Status.ID)
+		}
 	}
 
-	return identityCount, serviceCount, nil
+	return identitySelector, serviceSelector, identityCount, serviceCount, nil
 }
 
 func (r *ZitiAccessPolicyReconciler) reconcileDelete(ctx context.Context, policy *zitiv1alpha1.ZitiAccessPolicy) (ctrl.Result, error) {
@@ -271,11 +286,18 @@ func selectorDefined(selector zitiv1alpha1.SelectorSpec) bool {
 	return len(selector.MatchNames) > 0 || len(selector.MatchRoleAttributes) > 0
 }
 
-func matchesSelector(selector zitiv1alpha1.SelectorSpec, name string, roleAttributes []string) bool {
-	for _, candidate := range selector.MatchNames {
+func matchesNames(matchNames []string, name string) bool {
+	for _, candidate := range matchNames {
 		if candidate == name {
 			return true
 		}
+	}
+	return false
+}
+
+func matchesSelector(selector zitiv1alpha1.SelectorSpec, name string, roleAttributes []string) bool {
+	if matchesNames(selector.MatchNames, name) {
+		return true
 	}
 	for _, candidate := range selector.MatchRoleAttributes {
 		if slices.Contains(roleAttributes, candidate) {

@@ -185,6 +185,22 @@ func TestServiceFromEnvelopeIncludesConfigIDs(t *testing.T) {
 	}
 }
 
+func TestEnrollmentJWTFromListReturnsOTTJWT(t *testing.T) {
+	methodOtt := rest_model.EnrollmentCreateMethodOtt
+	methodUpdb := rest_model.EnrollmentCreateMethodUpdb
+
+	jwt := enrollmentJWTFromList(&rest_model.ListEnrollmentsEnvelope{
+		Data: []*rest_model.EnrollmentDetail{
+			{Method: &methodUpdb, JWT: ""},
+			{Method: &methodOtt, JWT: "  ott-jwt  "},
+		},
+	})
+
+	if jwt != "ott-jwt" {
+		t.Fatalf("expected ott jwt, got %q", jwt)
+	}
+}
+
 func stringPtr(value string) *string {
 	return &value
 }
