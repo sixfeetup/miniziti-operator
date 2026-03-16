@@ -25,6 +25,7 @@ import (
 type DesiredService struct {
 	Name           string
 	RoleAttributes []string
+	ConfigIDs      []string
 	Intercept      openziti.ServiceConfig
 	Host           openziti.ServiceConfig
 }

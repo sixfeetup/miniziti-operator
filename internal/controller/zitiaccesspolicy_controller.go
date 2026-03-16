@@ -22,6 +22,7 @@ import (
 	"slices"
 
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
@@ -71,29 +72,27 @@ func (r *ZitiAccessPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	if err := validateAccessPolicySpec(&policy); err != nil {
-		return r.markFailed(ctx, &policy, err, "SelectorValidationFailed")
+		return r.markFailed(ctx, &policy, err, "SelectorValidationFailed", false)
 	}
 
 	identityCount, serviceCount, err := r.resolveSelectorCounts(ctx, &policy)
 	if err != nil {
-		logger.Error(err, "selector resolution failed")
-		return r.markFailed(ctx, &policy, err, "SelectorResolutionFailed")
+		return r.markFailed(ctx, &policy, err, "SelectorResolutionFailed", true)
 	}
 	policy.Status.ResolvedIdentityCount = int32(identityCount)
 	policy.Status.ResolvedServiceCount = int32(serviceCount)
 
 	if identityCount == 0 {
-		return r.markFailed(ctx, &policy, fmt.Errorf("identity selector matched zero identities"), "SelectorResolutionFailed")
+		return r.markFailed(ctx, &policy, fmt.Errorf("identity selector matched zero identities"), "SelectorResolutionFailed", false)
 	}
 	if serviceCount == 0 {
-		return r.markFailed(ctx, &policy, fmt.Errorf("service selector matched zero services"), "SelectorResolutionFailed")
+		return r.markFailed(ctx, &policy, fmt.Errorf("service selector matched zero services"), "SelectorResolutionFailed", false)
 	}
 
 	desired := policyservice.FromResource(&policy)
 	backendPolicy, err := r.reconcilePolicy(ctx, &policy, desired)
 	if err != nil {
-		logger.Error(err, "access policy reconciliation failed")
-		return r.markFailed(ctx, &policy, err, "PolicySyncFailed")
+		return r.markFailed(ctx, &policy, err, "PolicySyncFailed", true)
 	}
 
 	policy.Status.ID = backendPolicy.ID
@@ -200,14 +199,22 @@ func (r *ZitiAccessPolicyReconciler) markReady(ctx context.Context, policy *ziti
 	return r.Status().Update(ctx, policy)
 }
 
-func (r *ZitiAccessPolicyReconciler) markFailed(ctx context.Context, policy *zitiv1alpha1.ZitiAccessPolicy, reconcileErr error, reason string) (ctrl.Result, error) {
+func (r *ZitiAccessPolicyReconciler) markFailed(ctx context.Context, policy *zitiv1alpha1.ZitiAccessPolicy, reconcileErr error, reason string, retryable bool) (ctrl.Result, error) {
+	message := normalizeReconcileErrorMessage(reconcileErr.Error())
+	if hasMatchingFailureStatus(policy.Status.CommonStatus, policy.Generation, reason, message) {
+		if retryable {
+			return RequeueWithError(reconcileErr)
+		}
+		return ctrl.Result{}, nil
+	}
+	previous := policy.Status.DeepCopy()
 	policy.Status.ObservedGeneration = policy.Generation
-	policy.Status.LastError = reconcileErr.Error()
+	policy.Status.LastError = message
 	SetStatusCondition(&policy.Status.CommonStatus, metav1.Condition{
 		Type:               zitiv1alpha1.ConditionTypeReady,
 		Status:             metav1.ConditionFalse,
 		Reason:             reason,
-		Message:            reconcileErr.Error(),
+		Message:            message,
 		ObservedGeneration: policy.Generation,
 		LastTransitionTime: metav1.Now(),
 	})
@@ -215,7 +222,7 @@ func (r *ZitiAccessPolicyReconciler) markFailed(ctx context.Context, policy *zit
 		Type:               zitiv1alpha1.ConditionTypeReconciling,
 		Status:             metav1.ConditionFalse,
 		Reason:             reason,
-		Message:            reconcileErr.Error(),
+		Message:            message,
 		ObservedGeneration: policy.Generation,
 		LastTransitionTime: metav1.Now(),
 	})
@@ -223,14 +230,19 @@ func (r *ZitiAccessPolicyReconciler) markFailed(ctx context.Context, policy *zit
 		Type:               zitiv1alpha1.ConditionTypeDegraded,
 		Status:             metav1.ConditionTrue,
 		Reason:             reason,
-		Message:            reconcileErr.Error(),
+		Message:            message,
 		ObservedGeneration: policy.Generation,
 		LastTransitionTime: metav1.Now(),
 	})
-	if err := r.Status().Update(ctx, policy); err != nil {
-		return ctrl.Result{}, err
+	if !apiequality.Semantic.DeepEqual(previous, &policy.Status) {
+		if err := r.Status().Update(ctx, policy); err != nil {
+			return ctrl.Result{}, err
+		}
+		EmitEvent(r.Recorder, policy, corev1.EventTypeWarning, reason, message)
 	}
-	EmitEvent(r.Recorder, policy, corev1.EventTypeWarning, reason, reconcileErr.Error())
+	if retryable {
+		return RequeueWithError(reconcileErr)
+	}
 	return ctrl.Result{}, nil
 }
 

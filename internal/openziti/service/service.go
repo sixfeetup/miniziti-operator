@@ -44,6 +44,7 @@ func (s *Service) Create(ctx context.Context, desired DesiredService) (*openziti
 	return s.client.CreateService(ctx, openziti.Service{
 		Name:           desired.Name,
 		RoleAttributes: append([]string(nil), desired.RoleAttributes...),
+		ConfigIDs:      append([]string(nil), desired.ConfigIDs...),
 	})
 }
 
@@ -52,6 +53,7 @@ func (s *Service) Update(ctx context.Context, id string, desired DesiredService)
 		ID:             id,
 		Name:           desired.Name,
 		RoleAttributes: append([]string(nil), desired.RoleAttributes...),
+		ConfigIDs:      append([]string(nil), desired.ConfigIDs...),
 	}
 	return s.client.UpdateService(ctx, service)
 }

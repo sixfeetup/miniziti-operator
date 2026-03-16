@@ -22,6 +22,7 @@ import (
 	"slices"
 
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
@@ -68,22 +69,31 @@ func (r *ZitiServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return r.reconcileDelete(ctx, &service)
 	}
 
+	if err := validateServiceSpec(&service); err != nil {
+		return r.markFailed(ctx, &service, err, "SpecValidationFailed", false)
+	}
+
 	desired := zitiservice.FromResource(&service)
 	backendService, err := r.reconcileService(ctx, &service, desired)
 	if err != nil {
-		logger.Error(err, "service reconciliation failed")
-		return r.markFailed(ctx, &service, err, "ServiceSyncFailed")
+		return r.markFailed(ctx, &service, err, "ServiceSyncFailed", true)
 	}
 
 	interceptConfig, err := r.reconcileConfig(ctx, service.Status.ConfigIDs.Intercept, desired.Intercept)
 	if err != nil {
-		logger.Error(err, "intercept config reconciliation failed")
-		return r.markFailed(ctx, &service, err, "InterceptConfigFailed")
+		return r.markFailed(ctx, &service, err, "InterceptConfigFailed", true)
 	}
 	hostConfig, err := r.reconcileConfig(ctx, service.Status.ConfigIDs.Host, desired.Host)
 	if err != nil {
-		logger.Error(err, "host config reconciliation failed")
-		return r.markFailed(ctx, &service, err, "HostConfigFailed")
+		return r.markFailed(ctx, &service, err, "HostConfigFailed", true)
+	}
+
+	desired.ConfigIDs = []string{interceptConfig.ID, hostConfig.ID}
+	if !slices.Equal(backendService.ConfigIDs, desired.ConfigIDs) {
+		backendService, err = r.ServiceManager.Update(ctx, backendService.ID, desired)
+		if err != nil {
+			return r.markFailed(ctx, &service, err, "ServiceSyncFailed", true)
+		}
 	}
 
 	service.Status.ID = backendService.ID
@@ -104,9 +114,6 @@ func (r *ZitiServiceReconciler) reconcileService(
 	resource *zitiv1alpha1.ZitiService,
 	desired zitiservice.DesiredService,
 ) (*openziti.Service, error) {
-	if err := validateServiceSpec(resource); err != nil {
-		return nil, err
-	}
 	if resource.Status.ID != "" {
 		return r.ServiceManager.Update(ctx, resource.Status.ID, desired)
 	}
@@ -191,14 +198,22 @@ func (r *ZitiServiceReconciler) markReady(ctx context.Context, service *zitiv1al
 	return r.Status().Update(ctx, service)
 }
 
-func (r *ZitiServiceReconciler) markFailed(ctx context.Context, service *zitiv1alpha1.ZitiService, reconcileErr error, reason string) (ctrl.Result, error) {
+func (r *ZitiServiceReconciler) markFailed(ctx context.Context, service *zitiv1alpha1.ZitiService, reconcileErr error, reason string, retryable bool) (ctrl.Result, error) {
+	message := normalizeReconcileErrorMessage(reconcileErr.Error())
+	if hasMatchingFailureStatus(service.Status.CommonStatus, service.Generation, reason, message) {
+		if retryable {
+			return RequeueWithError(reconcileErr)
+		}
+		return ctrl.Result{}, nil
+	}
+	previous := service.Status.DeepCopy()
 	service.Status.ObservedGeneration = service.Generation
-	service.Status.LastError = reconcileErr.Error()
+	service.Status.LastError = message
 	SetStatusCondition(&service.Status.CommonStatus, metav1.Condition{
 		Type:               zitiv1alpha1.ConditionTypeReady,
 		Status:             metav1.ConditionFalse,
 		Reason:             reason,
-		Message:            reconcileErr.Error(),
+		Message:            message,
 		ObservedGeneration: service.Generation,
 		LastTransitionTime: metav1.Now(),
 	})
@@ -206,7 +221,7 @@ func (r *ZitiServiceReconciler) markFailed(ctx context.Context, service *zitiv1a
 		Type:               zitiv1alpha1.ConditionTypeReconciling,
 		Status:             metav1.ConditionFalse,
 		Reason:             reason,
-		Message:            reconcileErr.Error(),
+		Message:            message,
 		ObservedGeneration: service.Generation,
 		LastTransitionTime: metav1.Now(),
 	})
@@ -214,14 +229,19 @@ func (r *ZitiServiceReconciler) markFailed(ctx context.Context, service *zitiv1a
 		Type:               zitiv1alpha1.ConditionTypeDegraded,
 		Status:             metav1.ConditionTrue,
 		Reason:             reason,
-		Message:            reconcileErr.Error(),
+		Message:            message,
 		ObservedGeneration: service.Generation,
 		LastTransitionTime: metav1.Now(),
 	})
-	if err := r.Status().Update(ctx, service); err != nil {
-		return ctrl.Result{}, err
+	if !apiequality.Semantic.DeepEqual(previous, &service.Status) {
+		if err := r.Status().Update(ctx, service); err != nil {
+			return ctrl.Result{}, err
+		}
+		EmitEvent(r.Recorder, service, corev1.EventTypeWarning, reason, message)
 	}
-	EmitEvent(r.Recorder, service, corev1.EventTypeWarning, reason, reconcileErr.Error())
+	if retryable {
+		return RequeueWithError(reconcileErr)
+	}
 	return ctrl.Result{}, nil
 }
 

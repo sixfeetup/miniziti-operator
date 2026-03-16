@@ -22,6 +22,7 @@ import (
 	"slices"
 
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
@@ -70,11 +71,14 @@ func (r *ZitiIdentityReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return r.reconcileDelete(ctx, &identity)
 	}
 
+	if err := validateIdentitySpec(&identity); err != nil {
+		return r.markFailed(ctx, &identity, err, "SpecValidationFailed", false)
+	}
+
 	desired := identityservice.FromResource(&identity)
 	backendIdentity, err := r.reconcileIdentity(ctx, &identity, desired)
 	if err != nil {
-		logger.Error(err, "identity reconciliation failed")
-		return r.markFailed(ctx, &identity, err, "IdentitySyncFailed")
+		return r.markFailed(ctx, &identity, err, "IdentitySyncFailed", true)
 	}
 
 	identity.Status.ID = backendIdentity.ID
@@ -83,13 +87,12 @@ func (r *ZitiIdentityReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if desired.CreateJWTSecret {
 		jwt, err := r.IdentityService.EnrollmentJWT(ctx, backendIdentity.ID)
 		if err != nil {
-			logger.Error(err, "failed to fetch enrollment jwt")
-			return r.markFailed(ctx, &identity, err, "EnrollmentJWTFailed")
+			return r.markFailed(ctx, &identity, err, "EnrollmentJWTFailed", true)
 		}
 		secretName, err := credentials.ReconcileEnrollmentSecret(ctx, r.Client, r.Scheme, &identity, jwt)
 		if err != nil {
 			logger.Error(err, "failed to reconcile enrollment secret")
-			return r.markFailed(ctx, &identity, err, "EnrollmentSecretFailed")
+			return r.markFailed(ctx, &identity, err, "EnrollmentSecretFailed", false)
 		}
 		identity.Status.JWTSecretName = secretName
 	}
@@ -108,10 +111,6 @@ func (r *ZitiIdentityReconciler) reconcileIdentity(
 	identity *zitiv1alpha1.ZitiIdentity,
 	desired identityservice.DesiredIdentity,
 ) (*openziti.Identity, error) {
-	if err := validateIdentitySpec(identity); err != nil {
-		return nil, err
-	}
-
 	if identity.Status.ID != "" {
 		return r.IdentityService.Update(ctx, identity.Status.ID, desired)
 	}
@@ -180,14 +179,22 @@ func (r *ZitiIdentityReconciler) markReady(ctx context.Context, identity *zitiv1
 	return r.Status().Update(ctx, identity)
 }
 
-func (r *ZitiIdentityReconciler) markFailed(ctx context.Context, identity *zitiv1alpha1.ZitiIdentity, reconcileErr error, reason string) (ctrl.Result, error) {
+func (r *ZitiIdentityReconciler) markFailed(ctx context.Context, identity *zitiv1alpha1.ZitiIdentity, reconcileErr error, reason string, retryable bool) (ctrl.Result, error) {
+	message := normalizeReconcileErrorMessage(reconcileErr.Error())
+	if hasMatchingFailureStatus(identity.Status.CommonStatus, identity.Generation, reason, message) {
+		if retryable {
+			return RequeueWithError(reconcileErr)
+		}
+		return ctrl.Result{}, nil
+	}
+	previous := identity.Status.DeepCopy()
 	identity.Status.ObservedGeneration = identity.Generation
-	identity.Status.LastError = reconcileErr.Error()
+	identity.Status.LastError = message
 	SetStatusCondition(&identity.Status.CommonStatus, metav1.Condition{
 		Type:               zitiv1alpha1.ConditionTypeReady,
 		Status:             metav1.ConditionFalse,
 		Reason:             reason,
-		Message:            reconcileErr.Error(),
+		Message:            message,
 		ObservedGeneration: identity.Generation,
 		LastTransitionTime: metav1.Now(),
 	})
@@ -195,7 +202,7 @@ func (r *ZitiIdentityReconciler) markFailed(ctx context.Context, identity *zitiv
 		Type:               zitiv1alpha1.ConditionTypeReconciling,
 		Status:             metav1.ConditionFalse,
 		Reason:             reason,
-		Message:            reconcileErr.Error(),
+		Message:            message,
 		ObservedGeneration: identity.Generation,
 		LastTransitionTime: metav1.Now(),
 	})
@@ -203,14 +210,19 @@ func (r *ZitiIdentityReconciler) markFailed(ctx context.Context, identity *zitiv
 		Type:               zitiv1alpha1.ConditionTypeDegraded,
 		Status:             metav1.ConditionTrue,
 		Reason:             reason,
-		Message:            reconcileErr.Error(),
+		Message:            message,
 		ObservedGeneration: identity.Generation,
 		LastTransitionTime: metav1.Now(),
 	})
-	if err := r.Status().Update(ctx, identity); err != nil {
-		return ctrl.Result{}, err
+	if !apiequality.Semantic.DeepEqual(previous, &identity.Status) {
+		if err := r.Status().Update(ctx, identity); err != nil {
+			return ctrl.Result{}, err
+		}
+		EmitEvent(r.Recorder, identity, corev1.EventTypeWarning, reason, message)
 	}
-	EmitEvent(r.Recorder, identity, corev1.EventTypeWarning, reason, reconcileErr.Error())
+	if retryable {
+		return RequeueWithError(reconcileErr)
+	}
 	return ctrl.Result{}, nil
 }
 

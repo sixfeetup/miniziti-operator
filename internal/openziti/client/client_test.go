@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/openziti/edge-api/rest_management_api_client"
+	"github.com/openziti/edge-api/rest_model"
 
 	"example.com/miniziti-operator/internal/credentials"
 )
@@ -128,4 +129,62 @@ func TestRootCAsFromConfig(t *testing.T) {
 	if pool == nil {
 		t.Fatal("expected cert pool")
 	}
+}
+
+func TestToIdentityCreateIncludesOTTEnrollment(t *testing.T) {
+	created := toIdentityCreate(Identity{
+		Name:      "alice@example.com",
+		Type:      "User",
+		CreateOTT: true,
+	})
+
+	if created.Enrollment == nil || !created.Enrollment.Ott {
+		t.Fatalf("expected OTT enrollment, got %#v", created.Enrollment)
+	}
+}
+
+func TestToServiceCreateIncludesConfigIDs(t *testing.T) {
+	created := toServiceCreate(Service{
+		Name:      "argocd",
+		ConfigIDs: []string{"cfg-intercept", "cfg-host"},
+	})
+
+	if len(created.Configs) != 2 {
+		t.Fatalf("expected 2 config ids, got %#v", created.Configs)
+	}
+}
+
+func TestToConfigCreateUsesResolvedConfigTypeID(t *testing.T) {
+	created := toConfigCreate(ServiceConfig{
+		Name:    "argocd-intercept",
+		Payload: map[string]any{"addresses": []string{"argocd.ziti"}},
+	}, "resolved-config-type-id")
+
+	if created.ConfigTypeID == nil || *created.ConfigTypeID != "resolved-config-type-id" {
+		t.Fatalf("expected resolved config type id, got %#v", created.ConfigTypeID)
+	}
+	if created.Data == nil {
+		t.Fatal("expected config payload data")
+	}
+}
+
+func TestServiceFromEnvelopeIncludesConfigIDs(t *testing.T) {
+	service := serviceFromEnvelope(&rest_model.DetailServiceEnvelope{
+		Data: &rest_model.ServiceDetail{
+			BaseEntity: rest_model.BaseEntity{ID: stringPtr("service-1")},
+			Name:       stringPtr("argocd"),
+			Configs:    []string{"cfg-intercept", "cfg-host"},
+		},
+	})
+
+	if service == nil {
+		t.Fatal("expected service")
+	}
+	if len(service.ConfigIDs) != 2 {
+		t.Fatalf("expected config ids, got %#v", service.ConfigIDs)
+	}
+}
+
+func stringPtr(value string) *string {
+	return &value
 }

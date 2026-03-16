@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"regexp"
 	"slices"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -26,7 +27,11 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	zitiv1alpha1 "example.com/miniziti-operator/api/v1alpha1"
 )
+
+var requestIDPattern = regexp.MustCompile(`([\\"]requestId[\\"]:\s*[\\"])[^\\"]+([\\"])`)
 
 type statusConditionAccessor interface {
 	GetConditions() []metav1.Condition
@@ -40,6 +45,13 @@ type finalizerAccessor interface {
 // SetStatusCondition upserts a condition on a resource-specific status wrapper.
 func SetStatusCondition(status statusConditionAccessor, condition metav1.Condition) {
 	conditions := status.GetConditions()
+	if existing := apimeta.FindStatusCondition(conditions, condition.Type); existing != nil &&
+		existing.Status == condition.Status &&
+		existing.Reason == condition.Reason &&
+		existing.Message == condition.Message &&
+		existing.ObservedGeneration == condition.ObservedGeneration {
+		condition.LastTransitionTime = existing.LastTransitionTime
+	}
 	apimeta.SetStatusCondition(&conditions, condition)
 	status.SetConditions(conditions)
 }
@@ -101,4 +113,31 @@ func EmitEvent(recorder record.EventRecorder, obj runtime.Object, eventType, rea
 // RequeueWithError returns a zero result and the given error for rate-limited retries.
 func RequeueWithError(err error) (ctrl.Result, error) {
 	return ctrl.Result{}, err
+}
+
+func normalizeReconcileErrorMessage(message string) string {
+	return requestIDPattern.ReplaceAllString(message, `${1}<redacted>${2}`)
+}
+
+func hasMatchingFailureStatus(status zitiv1alpha1.CommonStatus, generation int64, reason, message string) bool {
+	if status.ObservedGeneration != generation || status.LastError != message {
+		return false
+	}
+
+	ready := apimeta.FindStatusCondition(status.Conditions, zitiv1alpha1.ConditionTypeReady)
+	reconciling := apimeta.FindStatusCondition(status.Conditions, zitiv1alpha1.ConditionTypeReconciling)
+	degraded := apimeta.FindStatusCondition(status.Conditions, zitiv1alpha1.ConditionTypeDegraded)
+	if ready == nil || reconciling == nil || degraded == nil {
+		return false
+	}
+
+	return ready.Status == metav1.ConditionFalse &&
+		ready.Reason == reason &&
+		ready.Message == message &&
+		reconciling.Status == metav1.ConditionFalse &&
+		reconciling.Reason == reason &&
+		reconciling.Message == message &&
+		degraded.Status == metav1.ConditionTrue &&
+		degraded.Reason == reason &&
+		degraded.Message == message
 }

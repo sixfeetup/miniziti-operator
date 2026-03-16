@@ -41,6 +41,7 @@ type Identity struct {
 	Name           string
 	Type           string
 	RoleAttributes []string
+	CreateOTT      bool
 }
 
 // Service models the subset of OpenZiti service state needed by the operator.
@@ -48,6 +49,7 @@ type Service struct {
 	ID             string
 	Name           string
 	RoleAttributes []string
+	ConfigIDs      []string
 }
 
 // ServiceConfig models an OpenZiti service config artifact.
@@ -343,7 +345,14 @@ func (c *ManagementClient) GetConfig(ctx context.Context, id string) (*ServiceCo
 
 func (c *ManagementClient) CreateConfig(ctx context.Context, cfg ServiceConfig) (*ServiceConfig, error) {
 	return useAuthenticatedClient(ctx, c, c.loadCurrentConfig, func(api *rest_management_api_client.ZitiEdgeManagement) (*ServiceConfig, error) {
-		resp, err := api.Config.CreateConfig(configapi.NewCreateConfigParamsWithContext(ctx).WithConfig(toConfigCreate(cfg)), nil)
+		configTypeID, err := c.resolveConfigTypeIDWithAPI(ctx, api, cfg.Type)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := api.Config.CreateConfig(
+			configapi.NewCreateConfigParamsWithContext(ctx).WithConfig(toConfigCreate(cfg, configTypeID)),
+			nil,
+		)
 		if err != nil {
 			return nil, wrapAPICallError("create config", err)
 		}
@@ -610,6 +619,7 @@ func serviceFromEnvelope(envelope *rest_model.DetailServiceEnvelope) *Service {
 		ID:             *detail.ID,
 		Name:           *detail.Name,
 		RoleAttributes: roleAttributes,
+		ConfigIDs:      append([]string(nil), detail.Configs...),
 	}
 }
 
@@ -729,16 +739,64 @@ func extractCreatedID(createEnvelope *rest_model.CreateEnvelope) (string, error)
 	return strings.TrimSpace(createEnvelope.Data.ID), nil
 }
 
+func (c *ManagementClient) resolveConfigTypeIDWithAPI(
+	ctx context.Context,
+	api *rest_management_api_client.ZitiEdgeManagement,
+	configTypeName string,
+) (string, error) {
+	name := strings.TrimSpace(configTypeName)
+	if name == "" {
+		return "", fmt.Errorf("config type name must not be empty")
+	}
+
+	var offset int64
+	limit := int64(100)
+
+	for {
+		resp, err := api.Config.ListConfigTypes(
+			configapi.NewListConfigTypesParamsWithContext(ctx).WithLimit(&limit).WithOffset(&offset),
+			nil,
+		)
+		if err != nil {
+			return "", wrapAPICallError("list config types", err)
+		}
+		if resp.Payload == nil {
+			break
+		}
+
+		count := 0
+		for _, item := range resp.Payload.Data {
+			if item == nil || item.ID == nil || item.Name == nil {
+				continue
+			}
+			count++
+			if strings.TrimSpace(*item.Name) == name {
+				return strings.TrimSpace(*item.ID), nil
+			}
+		}
+		if count == 0 || count < int(limit) {
+			break
+		}
+		offset += int64(count)
+	}
+
+	return "", fmt.Errorf("config type %q not found", name)
+}
+
 func toIdentityCreate(identity Identity) *rest_model.IdentityCreate {
 	roleAttributes := rest_model.Attributes(append([]string(nil), identity.RoleAttributes...))
 	identityType := rest_model.IdentityType(identity.Type)
 	isAdmin := false
-	return &rest_model.IdentityCreate{
+	created := &rest_model.IdentityCreate{
 		Name:           &identity.Name,
 		Type:           &identityType,
 		IsAdmin:        &isAdmin,
 		RoleAttributes: &roleAttributes,
 	}
+	if identity.CreateOTT {
+		created.Enrollment = &rest_model.IdentityCreateEnrollment{Ott: true}
+	}
+	return created
 }
 
 func toIdentityUpdate(identity Identity) *rest_model.IdentityUpdate {
@@ -759,6 +817,7 @@ func toServiceCreate(service Service) *rest_model.ServiceCreate {
 		Name:               &service.Name,
 		EncryptionRequired: &encryptionRequired,
 		RoleAttributes:     append([]string(nil), service.RoleAttributes...),
+		Configs:            append([]string(nil), service.ConfigIDs...),
 	}
 }
 
@@ -766,11 +825,11 @@ func toServiceUpdate(service Service) *rest_model.ServiceUpdate {
 	return &rest_model.ServiceUpdate{
 		Name:           &service.Name,
 		RoleAttributes: append([]string(nil), service.RoleAttributes...),
+		Configs:        append([]string(nil), service.ConfigIDs...),
 	}
 }
 
-func toConfigCreate(cfg ServiceConfig) *rest_model.ConfigCreate {
-	configTypeID := cfg.Type
+func toConfigCreate(cfg ServiceConfig, configTypeID string) *rest_model.ConfigCreate {
 	return &rest_model.ConfigCreate{
 		Name:         &cfg.Name,
 		ConfigTypeID: &configTypeID,

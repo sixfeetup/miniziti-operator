@@ -69,5 +69,6 @@ func toClientIdentity(desired DesiredIdentity) client.Identity {
 		Name:           desired.Name,
 		Type:           desired.Type,
 		RoleAttributes: append([]string(nil), desired.RoleAttributes...),
+		CreateOTT:      desired.CreateJWTSecret,
 	}
 }
