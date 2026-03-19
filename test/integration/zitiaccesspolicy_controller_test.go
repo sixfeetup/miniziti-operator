@@ -51,42 +51,41 @@ func newZitiAccessPolicy(name string) *unstructured.Unstructured {
 	return obj
 }
 
-func createReadyIdentity(k8sName, zitiName string, roleAttributes ...string) *unstructured.Unstructured {
-	identity := newZitiIdentity(k8sName)
-	Expect(unstructured.SetNestedField(identity.Object, zitiName, "spec", "name")).To(Succeed())
-	Expect(unstructured.SetNestedStringSlice(identity.Object, roleAttributes, "spec", "roleAttributes")).To(Succeed())
-	Expect(k8sClient.Create(ctx, identity)).To(Succeed())
-
-	Eventually(func(g Gomega) {
-		stored := &unstructured.Unstructured{}
-		stored.SetGroupVersionKind(zitiIdentityGVK)
-		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(identity), stored)).To(Succeed())
-		id, found, err := unstructured.NestedString(stored.Object, "status", "id")
-		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(found).To(BeTrue())
-		g.Expect(id).NotTo(BeEmpty())
-	}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
-
-	return identity
+func createReadyResource(
+	obj *unstructured.Unstructured,
+	gvk schema.GroupVersionKind,
+	zitiName string,
+	roleAttributes ...string,
+) {
+	Expect(unstructured.SetNestedField(obj.Object, zitiName, "spec", "name")).To(Succeed())
+	Expect(
+		unstructured.SetNestedStringSlice(
+			obj.Object,
+			roleAttributes,
+			"spec",
+			"roleAttributes",
+		),
+	).To(Succeed())
+	Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+	awaitStatusID(obj, gvk)
 }
 
-func createReadyService(k8sName, zitiName string, roleAttributes ...string) *unstructured.Unstructured {
-	service := newZitiService(k8sName)
-	Expect(unstructured.SetNestedField(service.Object, zitiName, "spec", "name")).To(Succeed())
-	Expect(unstructured.SetNestedStringSlice(service.Object, roleAttributes, "spec", "roleAttributes")).To(Succeed())
-	Expect(k8sClient.Create(ctx, service)).To(Succeed())
+func createReadyIdentity(k8sName, zitiName string, roleAttributes ...string) {
+	createReadyResource(
+		newZitiIdentity(k8sName),
+		zitiIdentityGVK,
+		zitiName,
+		roleAttributes...,
+	)
+}
 
-	Eventually(func(g Gomega) {
-		stored := &unstructured.Unstructured{}
-		stored.SetGroupVersionKind(zitiServiceGVK)
-		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(service), stored)).To(Succeed())
-		id, found, err := unstructured.NestedString(stored.Object, "status", "id")
-		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(found).To(BeTrue())
-		g.Expect(id).NotTo(BeEmpty())
-	}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
-
-	return service
+func createReadyService(k8sName, zitiName string, roleAttributes ...string) {
+	createReadyResource(
+		newZitiService(k8sName),
+		zitiServiceGVK,
+		zitiName,
+		roleAttributes...,
+	)
 }
 
 var _ = Describe("ZitiAccessPolicy controller", func() {
@@ -123,45 +122,62 @@ var _ = Describe("ZitiAccessPolicy controller", func() {
 		createReadyService("argocd-policy-alt", "argocd-alt", "gitops")
 
 		policy := newZitiAccessPolicy("argocd-platform-dial")
-		Expect(unstructured.SetNestedStringSlice(policy.Object, []string{"argocd-update"}, "spec", "serviceSelector", "matchNames")).To(Succeed())
+		Expect(
+			unstructured.SetNestedStringSlice(
+				policy.Object,
+				[]string{"argocd-update"},
+				"spec",
+				"serviceSelector",
+				"matchNames",
+			),
+		).To(Succeed())
 		Expect(k8sClient.Create(ctx, policy)).To(Succeed())
 
-		stored := &unstructured.Unstructured{}
-		stored.SetGroupVersionKind(zitiAccessPolicyGVK)
-		Eventually(func(g Gomega) {
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(policy), stored)).To(Succeed())
-			id, found, err := unstructured.NestedString(stored.Object, "status", "id")
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(found).To(BeTrue())
-			g.Expect(id).NotTo(BeEmpty())
-		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
-
-		originalID, _, _ := unstructured.NestedString(stored.Object, "status", "id")
-		Expect(unstructured.SetNestedStringSlice(stored.Object, []string{"platform"}, "spec", "identitySelector", "matchRoleAttributes")).To(Succeed())
-		Expect(unstructured.SetNestedStringSlice(stored.Object, []string{"argocd-alt"}, "spec", "serviceSelector", "matchNames")).To(Succeed())
+		stored := newUnstructuredWithGVK(zitiAccessPolicyGVK)
+		originalID := awaitStatusID(policy, zitiAccessPolicyGVK)
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(policy), stored)).To(Succeed())
+		Expect(
+			unstructured.SetNestedStringSlice(
+				stored.Object,
+				[]string{"platform"},
+				"spec",
+				"identitySelector",
+				"matchRoleAttributes",
+			),
+		).To(Succeed())
+		Expect(
+			unstructured.SetNestedStringSlice(
+				stored.Object,
+				[]string{"argocd-alt"},
+				"spec",
+				"serviceSelector",
+				"matchNames",
+			),
+		).To(Succeed())
 		Expect(k8sClient.Update(ctx, stored)).To(Succeed())
-
-		Eventually(func(g Gomega) {
-			refreshed := &unstructured.Unstructured{}
-			refreshed.SetGroupVersionKind(zitiAccessPolicyGVK)
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(policy), refreshed)).To(Succeed())
-
-			id, found, err := unstructured.NestedString(refreshed.Object, "status", "id")
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(found).To(BeTrue())
-			g.Expect(id).To(Equal(originalID))
-
-			observedGeneration, found, err := unstructured.NestedInt64(refreshed.Object, "status", "observedGeneration")
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(found).To(BeTrue())
-			g.Expect(observedGeneration).To(Equal(refreshed.GetGeneration()))
-		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
+		awaitStableStatus(policy, zitiAccessPolicyGVK, originalID)
 	})
 
 	It("reports degraded status when selectors match zero identities or services", func() {
 		policy := newZitiAccessPolicy("argocd-zero-match")
-		Expect(unstructured.SetNestedStringSlice(policy.Object, []string{"nobody"}, "spec", "identitySelector", "matchRoleAttributes")).To(Succeed())
-		Expect(unstructured.SetNestedStringSlice(policy.Object, []string{"missing-service"}, "spec", "serviceSelector", "matchNames")).To(Succeed())
+		Expect(
+			unstructured.SetNestedStringSlice(
+				policy.Object,
+				[]string{"nobody"},
+				"spec",
+				"identitySelector",
+				"matchRoleAttributes",
+			),
+		).To(Succeed())
+		Expect(
+			unstructured.SetNestedStringSlice(
+				policy.Object,
+				[]string{"missing-service"},
+				"spec",
+				"serviceSelector",
+				"matchNames",
+			),
+		).To(Succeed())
 		Expect(k8sClient.Create(ctx, policy)).To(Succeed())
 
 		Eventually(func(g Gomega) {
@@ -181,7 +197,15 @@ var _ = Describe("ZitiAccessPolicy controller", func() {
 		createReadyService("argocd-policy-retry", "argocd-retry", "argocd")
 
 		policy := newZitiAccessPolicy("argocd-retry")
-		Expect(unstructured.SetNestedStringSlice(policy.Object, []string{"argocd-retry"}, "spec", "serviceSelector", "matchNames")).To(Succeed())
+		Expect(
+			unstructured.SetNestedStringSlice(
+				policy.Object,
+				[]string{"argocd-retry"},
+				"spec",
+				"serviceSelector",
+				"matchNames",
+			),
+		).To(Succeed())
 		Expect(k8sClient.Create(ctx, policy)).To(Succeed())
 
 		Eventually(func(g Gomega) {
@@ -205,23 +229,20 @@ var _ = Describe("ZitiAccessPolicy controller", func() {
 		createReadyService("argocd-policy-delete", "argocd-delete-policy", "argocd")
 
 		policy := newZitiAccessPolicy("argocd-delete")
-		Expect(unstructured.SetNestedStringSlice(policy.Object, []string{"argocd-delete-policy"}, "spec", "serviceSelector", "matchNames")).To(Succeed())
+		Expect(
+			unstructured.SetNestedStringSlice(
+				policy.Object,
+				[]string{"argocd-delete-policy"},
+				"spec",
+				"serviceSelector",
+				"matchNames",
+			),
+		).To(Succeed())
 		Expect(k8sClient.Create(ctx, policy)).To(Succeed())
 
-		Eventually(func(g Gomega) {
-			stored := &unstructured.Unstructured{}
-			stored.SetGroupVersionKind(zitiAccessPolicyGVK)
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(policy), stored)).To(Succeed())
-			g.Expect(stored.GetFinalizers()).NotTo(BeEmpty())
-		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
-
+		awaitFinalizer(policy, zitiAccessPolicyGVK)
 		Expect(k8sClient.Delete(ctx, policy)).To(Succeed())
-
-		Eventually(func(g Gomega) {
-			stored := &unstructured.Unstructured{}
-			stored.SetGroupVersionKind(zitiAccessPolicyGVK)
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(policy), stored)).NotTo(Succeed())
-		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
+		awaitDeleted(policy, zitiAccessPolicyGVK)
 	})
 
 	It("reports degraded status when backend policy sync fails", func() {
@@ -229,7 +250,15 @@ var _ = Describe("ZitiAccessPolicy controller", func() {
 		createReadyService("argocd-policy-failure", "argocd-failure-policy", "argocd")
 
 		policy := newZitiAccessPolicy("fail-status-policy")
-		Expect(unstructured.SetNestedStringSlice(policy.Object, []string{"argocd-failure-policy"}, "spec", "serviceSelector", "matchNames")).To(Succeed())
+		Expect(
+			unstructured.SetNestedStringSlice(
+				policy.Object,
+				[]string{"argocd-failure-policy"},
+				"spec",
+				"serviceSelector",
+				"matchNames",
+			),
+		).To(Succeed())
 		Expect(k8sClient.Create(ctx, policy)).To(Succeed())
 
 		Eventually(func(g Gomega) {
@@ -249,7 +278,15 @@ var _ = Describe("ZitiAccessPolicy controller", func() {
 		createReadyService("argocd-policy-event", "argocd-event-policy", "argocd")
 
 		policy := newZitiAccessPolicy("fail-event-policy")
-		Expect(unstructured.SetNestedStringSlice(policy.Object, []string{"argocd-event-policy"}, "spec", "serviceSelector", "matchNames")).To(Succeed())
+		Expect(
+			unstructured.SetNestedStringSlice(
+				policy.Object,
+				[]string{"argocd-event-policy"},
+				"spec",
+				"serviceSelector",
+				"matchNames",
+			),
+		).To(Succeed())
 		Expect(k8sClient.Create(ctx, policy)).To(Succeed())
 
 		Eventually(func(g Gomega) {

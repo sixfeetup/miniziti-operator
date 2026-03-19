@@ -23,9 +23,12 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -140,7 +143,7 @@ func (f *fakeOpenZitiClient) GetEnrollmentJWT(_ context.Context, id string) (str
 func (f *fakeOpenZitiClient) GetService(_ context.Context, id string) (*openziti.Service, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.getServiceLocked(id)
+	return f.getServiceLocked(id), nil
 }
 
 func (f *fakeOpenZitiClient) FindServiceByName(_ context.Context, name string) (*openziti.Service, error) {
@@ -200,7 +203,10 @@ func (f *fakeOpenZitiClient) GetConfig(_ context.Context, id string) (*openziti.
 	return nil, nil
 }
 
-func (f *fakeOpenZitiClient) CreateConfig(_ context.Context, cfg openziti.ServiceConfig) (*openziti.ServiceConfig, error) {
+func (f *fakeOpenZitiClient) CreateConfig(
+	_ context.Context,
+	cfg openziti.ServiceConfig,
+) (*openziti.ServiceConfig, error) {
 	if err := fakeConfigFailure(cfg.Name); err != nil {
 		return nil, err
 	}
@@ -215,7 +221,10 @@ func (f *fakeOpenZitiClient) CreateConfig(_ context.Context, cfg openziti.Servic
 	return &result, nil
 }
 
-func (f *fakeOpenZitiClient) UpdateConfig(_ context.Context, cfg openziti.ServiceConfig) (*openziti.ServiceConfig, error) {
+func (f *fakeOpenZitiClient) UpdateConfig(
+	_ context.Context,
+	cfg openziti.ServiceConfig,
+) (*openziti.ServiceConfig, error) {
 	if err := fakeConfigFailure(cfg.Name); err != nil {
 		return nil, err
 	}
@@ -268,7 +277,10 @@ func (f *fakeOpenZitiClient) FindAccessPolicyByName(_ context.Context, name stri
 	return nil, nil
 }
 
-func (f *fakeOpenZitiClient) CreateAccessPolicy(_ context.Context, policy openziti.AccessPolicy) (*openziti.AccessPolicy, error) {
+func (f *fakeOpenZitiClient) CreateAccessPolicy(
+	_ context.Context,
+	policy openziti.AccessPolicy,
+) (*openziti.AccessPolicy, error) {
 	if err := f.fakePolicyFailure(policy.Name); err != nil {
 		return nil, err
 	}
@@ -281,7 +293,10 @@ func (f *fakeOpenZitiClient) CreateAccessPolicy(_ context.Context, policy openzi
 	return &copy, nil
 }
 
-func (f *fakeOpenZitiClient) UpdateAccessPolicy(_ context.Context, policy openziti.AccessPolicy) (*openziti.AccessPolicy, error) {
+func (f *fakeOpenZitiClient) UpdateAccessPolicy(
+	_ context.Context,
+	policy openziti.AccessPolicy,
+) (*openziti.AccessPolicy, error) {
 	if err := f.fakePolicyFailure(policy.Name); err != nil {
 		return nil, err
 	}
@@ -339,12 +354,84 @@ func (f *fakeOpenZitiClient) fakePolicyFailure(name string) error {
 	return nil
 }
 
-func (f *fakeOpenZitiClient) getServiceLocked(id string) (*openziti.Service, error) {
+func (f *fakeOpenZitiClient) getServiceLocked(id string) *openziti.Service {
 	if service, ok := f.services[id]; ok {
 		copy := *service
-		return &copy, nil
+		return &copy
 	}
-	return nil, nil
+	return nil
+}
+
+func newUnstructuredWithGVK(gvk schema.GroupVersionKind) *unstructured.Unstructured {
+	obj := &unstructured.Unstructured{}
+	obj.SetGroupVersionKind(gvk)
+	return obj
+}
+
+func awaitStatusID(obj client.Object, gvk schema.GroupVersionKind) string {
+	stored := newUnstructuredWithGVK(gvk)
+	Eventually(func(g Gomega) {
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(obj), stored)).To(Succeed())
+		id, found, err := unstructured.NestedString(stored.Object, "status", "id")
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(found).To(BeTrue())
+		g.Expect(id).NotTo(BeEmpty())
+	}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
+
+	id, _, _ := unstructured.NestedString(stored.Object, "status", "id")
+	return id
+}
+
+func awaitStableStatus(
+	obj client.Object,
+	gvk schema.GroupVersionKind,
+	expectedID string,
+) {
+	Eventually(func(g Gomega) {
+		refreshed := newUnstructuredWithGVK(gvk)
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(obj), refreshed)).To(Succeed())
+
+		id, found, err := unstructured.NestedString(refreshed.Object, "status", "id")
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(found).To(BeTrue())
+		g.Expect(id).To(Equal(expectedID))
+
+		observedGeneration, found, err := unstructured.NestedInt64(
+			refreshed.Object,
+			"status",
+			"observedGeneration",
+		)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(found).To(BeTrue())
+		g.Expect(observedGeneration).To(Equal(refreshed.GetGeneration()))
+	}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
+}
+
+func awaitFinalizer(obj client.Object, gvk schema.GroupVersionKind) {
+	Eventually(func(g Gomega) {
+		stored := newUnstructuredWithGVK(gvk)
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(obj), stored)).To(Succeed())
+		g.Expect(stored.GetFinalizers()).NotTo(BeEmpty())
+	}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
+}
+
+func awaitDeleted(obj client.Object, gvk schema.GroupVersionKind) {
+	Eventually(func(g Gomega) {
+		stored := newUnstructuredWithGVK(gvk)
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(obj), stored)).NotTo(Succeed())
+	}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
+}
+
+func awaitLastError(obj client.Object, gvk schema.GroupVersionKind) {
+	Eventually(func(g Gomega) {
+		stored := newUnstructuredWithGVK(gvk)
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(obj), stored)).To(Succeed())
+
+		lastError, found, err := unstructured.NestedString(stored.Object, "status", "lastError")
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(found).To(BeTrue())
+		g.Expect(lastError).NotTo(BeEmpty())
+	}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
 }
 
 func clonePayload(payload map[string]any) map[string]any {

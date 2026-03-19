@@ -28,8 +28,8 @@ type Service struct {
 }
 
 // NewService constructs a Service around the shared OpenZiti client.
-func NewService(client client.Client) *Service {
-	return &Service{client: client}
+func NewService(apiClient client.Client) *Service {
+	return &Service{client: apiClient}
 }
 
 // FindByName locates an OpenZiti identity by its external name.

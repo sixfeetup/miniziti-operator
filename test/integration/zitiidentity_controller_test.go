@@ -22,7 +22,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -91,34 +90,19 @@ var _ = Describe("ZitiIdentity controller", func() {
 		identity := newZitiIdentity("alice-update")
 		Expect(k8sClient.Create(ctx, identity)).To(Succeed())
 
-		stored := identity.DeepCopy()
-		Eventually(func(g Gomega) {
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(identity), stored)).To(Succeed())
-			id, found, err := unstructured.NestedString(stored.Object, "status", "id")
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(found).To(BeTrue())
-			g.Expect(id).NotTo(BeEmpty())
-		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
-
-		originalID, _, _ := unstructured.NestedString(stored.Object, "status", "id")
-		Expect(unstructured.SetNestedStringSlice(stored.Object, []string{"employee", "platform"}, "spec", "roleAttributes")).To(Succeed())
+		stored := newUnstructuredWithGVK(zitiIdentityGVK)
+		originalID := awaitStatusID(identity, zitiIdentityGVK)
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(identity), stored)).To(Succeed())
+		Expect(
+			unstructured.SetNestedStringSlice(
+				stored.Object,
+				[]string{"employee", "platform"},
+				"spec",
+				"roleAttributes",
+			),
+		).To(Succeed())
 		Expect(k8sClient.Update(ctx, stored)).To(Succeed())
-
-		Eventually(func(g Gomega) {
-			refreshed := &unstructured.Unstructured{}
-			refreshed.SetGroupVersionKind(zitiIdentityGVK)
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(identity), refreshed)).To(Succeed())
-
-			id, found, err := unstructured.NestedString(refreshed.Object, "status", "id")
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(found).To(BeTrue())
-			g.Expect(id).To(Equal(originalID))
-
-			observedGeneration, found, err := unstructured.NestedInt64(refreshed.Object, "status", "observedGeneration")
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(found).To(BeTrue())
-			g.Expect(observedGeneration).To(Equal(int64(2)))
-		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
+		awaitStableStatus(identity, zitiIdentityGVK, originalID)
 	})
 
 	It("creates the requested enrollment secret and records it in status", func() {
@@ -136,7 +120,16 @@ var _ = Describe("ZitiIdentity controller", func() {
 			g.Expect(jwtSecretName).To(Equal("alice-enrollment-jwt"))
 
 			var secret corev1.Secret
-			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: identity.GetNamespace(), Name: jwtSecretName}, &secret)).To(Succeed())
+			g.Expect(
+				k8sClient.Get(
+					ctx,
+					client.ObjectKey{
+						Namespace: identity.GetNamespace(),
+						Name:      jwtSecretName,
+					},
+					&secret,
+				),
+			).To(Succeed())
 		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
 	})
 
@@ -144,42 +137,35 @@ var _ = Describe("ZitiIdentity controller", func() {
 		identity := newZitiIdentity("alice-delete")
 		Expect(k8sClient.Create(ctx, identity)).To(Succeed())
 
-		Eventually(func(g Gomega) {
-			stored := &unstructured.Unstructured{}
-			stored.SetGroupVersionKind(zitiIdentityGVK)
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(identity), stored)).To(Succeed())
-			g.Expect(stored.GetFinalizers()).NotTo(BeEmpty())
-		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
-
+		awaitFinalizer(identity, zitiIdentityGVK)
 		Expect(k8sClient.Delete(ctx, identity)).To(Succeed())
-
-		Eventually(func(g Gomega) {
-			stored := &unstructured.Unstructured{}
-			stored.SetGroupVersionKind(zitiIdentityGVK)
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(identity), stored)).NotTo(Succeed())
-		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
+		awaitDeleted(identity, zitiIdentityGVK)
 	})
 
 	It("reports degraded status when reconciliation fails", func() {
 		identity := newZitiIdentity("alice-failure")
-		unstructured.SetNestedField(identity.Object, "fail-status@example.com", "spec", "name")
+		Expect(
+			unstructured.SetNestedField(
+				identity.Object,
+				"fail-status@example.com",
+				"spec",
+				"name",
+			),
+		).To(Succeed())
 		Expect(k8sClient.Create(ctx, identity)).To(Succeed())
-
-		Eventually(func(g Gomega) {
-			stored := &unstructured.Unstructured{}
-			stored.SetGroupVersionKind(zitiIdentityGVK)
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(identity), stored)).To(Succeed())
-
-			lastError, found, err := unstructured.NestedString(stored.Object, "status", "lastError")
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(found).To(BeTrue())
-			g.Expect(lastError).NotTo(BeEmpty())
-		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
+		awaitLastError(identity, zitiIdentityGVK)
 	})
 
 	It("emits a warning event when reconciliation fails", func() {
 		identity := newZitiIdentity("alice-event")
-		unstructured.SetNestedField(identity.Object, "fail-event@example.com", "spec", "name")
+		Expect(
+			unstructured.SetNestedField(
+				identity.Object,
+				"fail-event@example.com",
+				"spec",
+				"name",
+			),
+		).To(Succeed())
 		Expect(k8sClient.Create(ctx, identity)).To(Succeed())
 
 		Eventually(func(g Gomega) {
@@ -197,9 +183,4 @@ var _ = Describe("ZitiIdentity controller", func() {
 			g.Expect(foundWarning).To(BeTrue())
 		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
 	})
-})
-
-var _ = BeforeEach(func() {
-	// Keep object timestamps deterministic for assertions that depend on generation/status transitions.
-	metav1.Now()
 })

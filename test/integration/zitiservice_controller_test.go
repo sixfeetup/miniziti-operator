@@ -92,77 +92,56 @@ var _ = Describe("ZitiService controller", func() {
 		service := newZitiService("argocd-update")
 		Expect(k8sClient.Create(ctx, service)).To(Succeed())
 
-		stored := &unstructured.Unstructured{}
-		stored.SetGroupVersionKind(zitiServiceGVK)
-		Eventually(func(g Gomega) {
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(service), stored)).To(Succeed())
-			id, found, err := unstructured.NestedString(stored.Object, "status", "id")
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(found).To(BeTrue())
-			g.Expect(id).NotTo(BeEmpty())
-		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
-
-		originalID, _, _ := unstructured.NestedString(stored.Object, "status", "id")
-		Expect(unstructured.SetNestedStringSlice(stored.Object, []string{"argocd-new.ziti"}, "spec", "configs", "intercept", "addresses")).To(Succeed())
+		stored := newUnstructuredWithGVK(zitiServiceGVK)
+		originalID := awaitStatusID(service, zitiServiceGVK)
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(service), stored)).To(Succeed())
+		Expect(
+			unstructured.SetNestedStringSlice(
+				stored.Object,
+				[]string{"argocd-new.ziti"},
+				"spec",
+				"configs",
+				"intercept",
+				"addresses",
+			),
+		).To(Succeed())
 		Expect(k8sClient.Update(ctx, stored)).To(Succeed())
-
-		Eventually(func(g Gomega) {
-			refreshed := &unstructured.Unstructured{}
-			refreshed.SetGroupVersionKind(zitiServiceGVK)
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(service), refreshed)).To(Succeed())
-
-			id, found, err := unstructured.NestedString(refreshed.Object, "status", "id")
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(found).To(BeTrue())
-			g.Expect(id).To(Equal(originalID))
-
-			observedGeneration, found, err := unstructured.NestedInt64(refreshed.Object, "status", "observedGeneration")
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(found).To(BeTrue())
-			g.Expect(observedGeneration).To(Equal(refreshed.GetGeneration()))
-		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
+		awaitStableStatus(service, zitiServiceGVK, originalID)
 	})
 
 	It("removes managed configs and the backend service on delete", func() {
 		service := newZitiService("argocd-delete")
 		Expect(k8sClient.Create(ctx, service)).To(Succeed())
 
-		Eventually(func(g Gomega) {
-			stored := &unstructured.Unstructured{}
-			stored.SetGroupVersionKind(zitiServiceGVK)
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(service), stored)).To(Succeed())
-			g.Expect(stored.GetFinalizers()).NotTo(BeEmpty())
-		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
-
+		awaitFinalizer(service, zitiServiceGVK)
 		Expect(k8sClient.Delete(ctx, service)).To(Succeed())
-
-		Eventually(func(g Gomega) {
-			stored := &unstructured.Unstructured{}
-			stored.SetGroupVersionKind(zitiServiceGVK)
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(service), stored)).NotTo(Succeed())
-		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
+		awaitDeleted(service, zitiServiceGVK)
 	})
 
 	It("reports degraded status when config reconciliation fails", func() {
 		service := newZitiService("argocd-failure")
-		unstructured.SetNestedField(service.Object, "fail-config.ziti", "spec", "name")
+		Expect(
+			unstructured.SetNestedField(
+				service.Object,
+				"fail-config.ziti",
+				"spec",
+				"name",
+			),
+		).To(Succeed())
 		Expect(k8sClient.Create(ctx, service)).To(Succeed())
-
-		Eventually(func(g Gomega) {
-			stored := &unstructured.Unstructured{}
-			stored.SetGroupVersionKind(zitiServiceGVK)
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(service), stored)).To(Succeed())
-
-			lastError, found, err := unstructured.NestedString(stored.Object, "status", "lastError")
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(found).To(BeTrue())
-			g.Expect(lastError).NotTo(BeEmpty())
-		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
+		awaitLastError(service, zitiServiceGVK)
 	})
 
 	It("emits a warning event when config reconciliation fails", func() {
 		service := newZitiService("argocd-event")
-		unstructured.SetNestedField(service.Object, "fail-event.ziti", "spec", "name")
+		Expect(
+			unstructured.SetNestedField(
+				service.Object,
+				"fail-event.ziti",
+				"spec",
+				"name",
+			),
+		).To(Succeed())
 		Expect(k8sClient.Create(ctx, service)).To(Succeed())
 
 		Eventually(func(g Gomega) {
