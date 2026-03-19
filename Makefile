@@ -14,6 +14,7 @@ endif
 # tools. (i.e. podman)
 CONTAINER_TOOL ?= docker
 HELM ?= helm
+GH ?= gh
 
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
@@ -186,6 +187,25 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 .PHONY: lint-config
 lint-config: golangci-lint ## Verify golangci-lint linter configuration
 	"$(GOLANGCI_LINT)" config verify
+
+##@ GitHub
+
+GH_RUN_LIMIT ?= 20
+
+.PHONY: gh-runs
+gh-runs: ## List recent GitHub Actions workflow runs, including run IDs.
+	"$(GH)" run list \
+		--limit "$(GH_RUN_LIMIT)" \
+		--json databaseId,workflowName,displayTitle,status,conclusion,headBranch,event,createdAt \
+		--template '{{printf "%-12s %-18s %-12s %-12s %-20s %-10s %s\n" "RUN_ID" "WORKFLOW" "STATUS" "CONCLUSION" "BRANCH" "EVENT" "TITLE"}}{{range .}}{{printf "%-12.0f %-18s %-12s %-12s %-20s %-10s %s\n" .databaseId .workflowName .status .conclusion .headBranch .event .displayTitle}}{{end}}'
+
+.PHONY: gh-run-logs
+gh-run-logs: ## Show logs for a GitHub Actions run. Usage: make gh-run-logs RUN_ID=<run-id>
+	@if [ -z "$(RUN_ID)" ]; then \
+		echo "RUN_ID is required. Usage: make gh-run-logs RUN_ID=<run-id>"; \
+		exit 1; \
+	fi
+	"$(GH)" run view "$(RUN_ID)" --log
 
 ##@ Build
 
