@@ -248,8 +248,12 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
-	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
-	"$(KUSTOMIZE)" build config/default > dist/install.yaml
+	@tmpdir="$$(mktemp -d)"; \
+	trap 'rm -rf "$$tmpdir"' EXIT; \
+	cp -R config/default "$$tmpdir/default"; \
+	cp -R config/manager "$$tmpdir/manager"; \
+	cd "$$tmpdir/manager" && "$(KUSTOMIZE)" edit set image controller=${IMG}; \
+	"$(KUSTOMIZE)" build "$$tmpdir/default" > dist/install.yaml
 
 ##@ Deployment
 
@@ -269,8 +273,12 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified by $(KIND_KUBECONFIG).
-	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
-	"$(KUSTOMIZE)" build config/default | KUBECONFIG="$(KIND_KUBECONFIG)" "$(KUBECTL)" apply -f -
+	@tmpdir="$$(mktemp -d)"; \
+	trap 'rm -rf "$$tmpdir"' EXIT; \
+	cp -R config/default "$$tmpdir/default"; \
+	cp -R config/manager "$$tmpdir/manager"; \
+	cd "$$tmpdir/manager" && "$(KUSTOMIZE)" edit set image controller=${IMG}; \
+	"$(KUSTOMIZE)" build "$$tmpdir/default" | KUBECONFIG="$(KIND_KUBECONFIG)" "$(KUBECTL)" apply -f -
 
 .PHONY: undeploy
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified by $(KIND_KUBECONFIG). Call with ignore-not-found=true to ignore resource not found errors during deletion.
