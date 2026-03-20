@@ -1,18 +1,38 @@
 # miniziti-operator
-// TODO(user): Add simple overview of use/purpose
+
+`miniziti-operator` is a scratch-our-own-itch Kubernetes operator for making the
+most common OpenZiti actions declarative from cluster manifests. It reconciles
+`ZitiIdentity`, `ZitiService`, and `ZitiAccessPolicy` custom resources into the
+corresponding OpenZiti identities, services, and access policies.
 
 ## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+
+The operator treats Kubernetes manifests as the source of truth for a focused
+OpenZiti workflow: adding identities, publishing services, and granting user or
+workload access to those services through policy declarations. It reads
+management credentials from a Kubernetes Secret, creates and updates OpenZiti
+objects through the management API, and reports reconciliation status back on
+the custom resources with stable status fields such as `status.id`,
+`status.conditions`, `status.observedGeneration`, and `status.lastError`.
+
+This project is intentionally narrow. It is not meant to be an exhaustive
+implementation of the OpenZiti management API or a complete Kubernetes
+integration for every OpenZiti capability. It is aimed at the common declarative
+workflow this repository needs most often. If you are looking for the broader
+official Kubernetes integration effort around Ziti, see NetFoundry's
+[`ziti-k8s-agent`](https://github.com/netfoundry/ziti-k8s-agent).
 
 ## Getting Started
 
 ### Prerequisites
+
 - go version v1.24.6+
 - docker version 17.03+.
 - kubectl version v1.11.3+.
 - Access to a Kubernetes v1.11.3+ cluster.
 
 ### To Deploy on the cluster
+
 **Build and push your image to the location specified by `IMG`:**
 
 ```sh
@@ -36,7 +56,7 @@ make deploy IMG=<some-registry>/miniziti-operator:tag
 ```
 
 > **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
-privileges or be logged in as admin.
+> privileges or be logged in as admin.
 
 **Create instances of your solution**
 You can apply the samples (examples) from the config/sample:
@@ -45,9 +65,10 @@ You can apply the samples (examples) from the config/sample:
 kubectl apply -k config/samples/
 ```
 
->**NOTE**: Ensure that the samples has default values to test it out.
+> **NOTE**: Ensure that the samples has default values to test it out.
 
 ### To Uninstall
+
 **Delete the instances (CRs) from the cluster:**
 
 ```sh
@@ -101,7 +122,7 @@ kubebuilder edit --plugins=helm/v2-alpha
 ```
 
 2. See that a chart was generated under 'dist/chart', and users
-can obtain this solution from there.
+   can obtain this solution from there.
 
 **NOTE:** If you change the project, you need to update the Helm Chart
 using the same command above to sync the latest changes. Furthermore,
@@ -111,11 +132,27 @@ previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml
 is manually re-applied afterwards.
 
 ## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
+
+Contributions should keep the operator focused on its declared v1 scope and
+preserve the existing controller-runtime and Kubebuilder patterns in the
+repository. Before opening a change, run the documented validation flow locally
+and keep generated manifests in sync with the code:
+
+```sh
+make validate
+make test-e2e
+```
+
+When changing API types or reconciliation behavior, update the relevant CRDs,
+samples, tests, and design artifacts under `specs/001-miniziti-operator/` if the
+intended behavior changes. Prefer small, reviewable commits, and avoid
+committing local Kustomize mutations or other generated drift that is not part
+of the functional change.
 
 **NOTE:** Run `make help` for more information on all potential `make` targets
 
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
+More information can be found via the [Kubebuilder
+Documentation](https://book.kubebuilder.io/introduction.html)
 
 ## License
 
@@ -132,4 +169,3 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-
