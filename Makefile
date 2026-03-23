@@ -249,10 +249,11 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
 	@tmpdir="$$(mktemp -d)"; \
+	reporoot="$$(pwd)"; \
 	trap 'rm -rf "$$tmpdir"' EXIT; \
 	cp -R config "$$tmpdir/config"; \
 	cd "$$tmpdir/config/manager" && "$(KUSTOMIZE)" edit set image controller=${IMG}; \
-	"$(KUSTOMIZE)" build "$$tmpdir/config/default" > dist/install.yaml
+	"$(KUSTOMIZE)" build "$$tmpdir/config/default" > "$$reporoot/dist/install.yaml"
 
 ##@ Deployment
 

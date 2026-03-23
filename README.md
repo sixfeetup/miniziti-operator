@@ -1,159 +1,193 @@
 # miniziti-operator
 
-`miniziti-operator` is a scratch-our-own-itch Kubernetes operator for making the
-most common OpenZiti actions declarative from cluster manifests. It reconciles
-`ZitiIdentity`, `ZitiService`, and `ZitiAccessPolicy` custom resources into the
-corresponding OpenZiti identities, services, and access policies.
+`miniziti-operator` is a scratch-our-own-itch Kubernetes operator for making
+the most common OpenZiti actions declarative from cluster manifests. It
+reconciles `ZitiIdentity`, `ZitiService`, and `ZitiAccessPolicy` custom
+resources into the corresponding OpenZiti identities, services, and access
+policies.
 
-## Description
+The operator is intentionally narrow. It focuses on the common declarative
+workflow of:
 
-The operator treats Kubernetes manifests as the source of truth for a focused
-OpenZiti workflow: adding identities, publishing services, and granting user or
-workload access to those services through policy declarations. It reads
-management credentials from a Kubernetes Secret, creates and updates OpenZiti
-objects through the management API, and reports reconciliation status back on
-the custom resources with stable status fields such as `status.id`,
-`status.conditions`, `status.observedGeneration`, and `status.lastError`.
+- adding identities
+- publishing services
+- granting access to those services
 
-This project is intentionally narrow. It is not meant to be an exhaustive
-implementation of the OpenZiti management API or a complete Kubernetes
-integration for every OpenZiti capability. It is aimed at the common declarative
-workflow this repository needs most often. If you are looking for the broader
-official Kubernetes integration effort around Ziti, see NetFoundry's
+It is not intended to be an exhaustive implementation of the OpenZiti
+management API. For the broader official Kubernetes integration effort around
+Ziti, see NetFoundry's
 [`ziti-k8s-agent`](https://github.com/netfoundry/ziti-k8s-agent).
 
-## Getting Started
+## Install With kubectl
 
 ### Prerequisites
 
-- go version v1.24.6+
-- docker version 17.03+.
-- kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
+- a Kubernetes cluster you can access with `kubectl`
+- an OpenZiti controller URL and management credentials
+- optionally, a PEM CA bundle if your OpenZiti management endpoint uses a
+  private or self-signed certificate
 
-### To Deploy on the cluster
+### 1. Install the operator
 
-**Build and push your image to the location specified by `IMG`:**
-
-```sh
-make docker-build docker-push IMG=<some-registry>/miniziti-operator:tag
-```
-
-**NOTE:** This image ought to be published in the personal registry you specified.
-And it is required to have access to pull the image from the working environment.
-Make sure you have the proper permission to the registry if the above commands don’t work.
-
-**Install the CRDs into the cluster:**
+The repository publishes an install bundle that uses the Docker Hub image
+`sixfeetup/miniziti-operator:latest`:
 
 ```sh
-make install
+kubectl apply -f https://raw.githubusercontent.com/sixfeetup/miniziti-operator/main/dist/install.yaml
 ```
 
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
+This installs the CRDs, RBAC, namespace, and controller deployment.
+
+### 2. Create the OpenZiti management Secret
+
+The operator reads OpenZiti management credentials from a Kubernetes Secret
+named `openziti-management` in the `ziti` namespace:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: openziti-management
+  namespace: ziti
+type: Opaque
+stringData:
+  controllerUrl: https://ziti.example.com/edge/management/v1
+  username: admin
+  password: change-me
+```
+
+If your management endpoint uses a private or self-signed CA, add `caBundle` to
+the same Secret:
+
+```yaml
+  caBundle: |
+    -----BEGIN CERTIFICATE-----
+    ...
+    -----END CERTIFICATE-----
+```
+
+Apply the Secret:
 
 ```sh
-make deploy IMG=<some-registry>/miniziti-operator:tag
+kubectl apply -f openziti-management-secret.yaml
 ```
 
-> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
-> privileges or be logged in as admin.
+### 3. Create resources
 
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
+Apply declarative resources for identities, services, and access policies.
+
+Example identity:
+
+```yaml
+apiVersion: ziti.sixfeetup.com/v1alpha1
+kind: ZitiIdentity
+metadata:
+  name: alice
+  namespace: default
+spec:
+  name: alice@example.com
+  type: User
+  roleAttributes:
+    - employee
+    - devops
+  enrollment:
+    createJwtSecret: true
+    jwtSecretName: alice-ziti-jwt
+```
+
+Example service:
+
+```yaml
+apiVersion: ziti.sixfeetup.com/v1alpha1
+kind: ZitiService
+metadata:
+  name: argocd
+  namespace: default
+spec:
+  name: argocd
+  roleAttributes:
+    - argocd
+  configs:
+    intercept:
+      protocols:
+        - tcp
+      addresses:
+        - argocd.ziti
+      portRanges:
+        - low: 443
+          high: 443
+    host:
+      protocol: tcp
+      address: argocd-server.argocd.svc.cluster.local
+      port: 443
+```
+
+Example access policy:
+
+```yaml
+apiVersion: ziti.sixfeetup.com/v1alpha1
+kind: ZitiAccessPolicy
+metadata:
+  name: argocd-devops-dial
+  namespace: default
+spec:
+  type: Dial
+  identitySelector:
+    matchRoleAttributes:
+      - devops
+  serviceSelector:
+    matchNames:
+      - argocd
+```
+
+Apply your manifests:
 
 ```sh
-kubectl apply -k config/samples/
+kubectl apply -f your-resources.yaml
 ```
 
-> **NOTE**: Ensure that the samples has default values to test it out.
-
-### To Uninstall
-
-**Delete the instances (CRs) from the cluster:**
+### 4. Check status
 
 ```sh
-kubectl delete -k config/samples/
+kubectl get zitiidentities,zitiservices,zitiaccesspolicies -A
+kubectl describe zitiidentity alice -n default
+kubectl describe zitiservice argocd -n default
+kubectl describe zitiaccesspolicy argocd-devops-dial -n default
 ```
 
-**Delete the APIs(CRDs) from the cluster:**
+The operator reports reconciliation state through status fields including:
+
+- `status.id`
+- `status.conditions`
+- `status.observedGeneration`
+- `status.lastError`
+
+### 5. Uninstall
+
+Delete your custom resources first if you want the operator to reconcile their
+removal before uninstall:
 
 ```sh
-make uninstall
+kubectl delete -f your-resources.yaml
 ```
 
-**UnDeploy the controller from the cluster:**
+Then remove the operator bundle:
 
 ```sh
-make undeploy
+kubectl delete -f https://raw.githubusercontent.com/sixfeetup/miniziti-operator/main/dist/install.yaml
 ```
 
-## Project Distribution
+## Helm
 
-Following the options to release and provide this solution to the users.
+Helm packaging is the next documentation step. For now, the supported
+user-facing install path in this repository is the `kubectl apply` flow above.
 
-### By providing a bundle with all YAML files
+## Development
 
-1. Build the installer for the image built and published in the registry:
-
-```sh
-make build-installer IMG=<some-registry>/miniziti-operator:tag
-```
-
-**NOTE:** The makefile target mentioned above generates an 'install.yaml'
-file in the dist directory. This file contains all the resources built
-with Kustomize, which are necessary to install this project without its
-dependencies.
-
-2. Using the installer
-
-Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
-the project, i.e.:
-
-```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/miniziti-operator/<tag or branch>/dist/install.yaml
-```
-
-### By providing a Helm Chart
-
-1. Build the chart using the optional helm plugin
-
-```sh
-kubebuilder edit --plugins=helm/v2-alpha
-```
-
-2. See that a chart was generated under 'dist/chart', and users
-   can obtain this solution from there.
-
-**NOTE:** If you change the project, you need to update the Helm Chart
-using the same command above to sync the latest changes. Furthermore,
-if you create webhooks, you need to use the above command with
-the '--force' flag and manually ensure that any custom configuration
-previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml'
-is manually re-applied afterwards.
-
-## Contributing
-
-Contributions should keep the operator focused on its declared v1 scope and
-preserve the existing controller-runtime and Kubebuilder patterns in the
-repository. Before opening a change, run the documented validation flow locally
-and keep generated manifests in sync with the code:
-
-```sh
-make validate
-make test-e2e
-```
-
-When changing API types or reconciliation behavior, update the relevant CRDs,
-samples, tests, and design artifacts under `specs/001-miniziti-operator/` if the
-intended behavior changes. Prefer small, reviewable commits, and avoid
-committing local Kustomize mutations or other generated drift that is not part
-of the functional change.
-
-**NOTE:** Run `make help` for more information on all potential `make` targets
-
-More information can be found via the [Kubebuilder
-Documentation](https://book.kubebuilder.io/introduction.html)
+Development and contributor-focused instructions live in
+[DEVELOPMENT.md](./DEVELOPMENT.md).
 
 ## License
 
-This project is licensed under the Apache License, Version 2.0. See [LICENSE](./LICENSE).
+This project is licensed under the Apache License, Version 2.0. See
+[LICENSE](./LICENSE).
