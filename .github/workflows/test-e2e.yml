@@ -5,8 +5,8 @@ on:
   pull_request:
 
 jobs:
-  test-e2e:
-    name: Run on Ubuntu
+  test-e2e-install:
+    name: Run install e2e on Ubuntu
     runs-on: ubuntu-latest
     steps:
       - name: Clone the code
@@ -26,7 +26,7 @@ jobs:
       - name: Verify kind installation
         run: kind version
 
-      - name: Running Test e2e
+      - name: Running install-mode e2e test
         run: |
           go mod tidy
-          make test-e2e
+          make test-e2e-install
