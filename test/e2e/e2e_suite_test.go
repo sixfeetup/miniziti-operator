@@ -21,6 +21,7 @@ package e2e
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"testing"
 
@@ -34,6 +35,7 @@ var (
 	// projectImage is the name of the image which will be build and loaded
 	// with the code source changes to be tested.
 	projectImage = "example.com/miniziti-operator:v0.0.1"
+	installMode  = "dev"
 )
 
 // TestE2E runs the end-to-end (e2e) test suite for the project. These tests execute in an isolated,
@@ -41,25 +43,29 @@ var (
 // The default setup requires Kind, builds/loads the Manager Docker image locally, and installs
 // CertManager.
 func TestE2E(t *testing.T) {
+	if mode := os.Getenv("E2E_INSTALL_MODE"); mode != "" {
+		installMode = mode
+	}
 	RegisterFailHandler(Fail)
-	_, _ = fmt.Fprintf(GinkgoWriter, "Starting miniziti-operator integration test suite\n")
+	_, _ = fmt.Fprintf(GinkgoWriter, "Starting miniziti-operator integration test suite (%s mode)\n", installMode)
 	RunSpecs(t, "e2e suite")
 }
 
 var _ = BeforeSuite(func() {
-	By("building the manager(Operator) image")
-	cmd := exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", projectImage))
-	_, err := utils.Run(cmd)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the manager(Operator) image")
+	var err error
+	if installMode == "dev" {
+		By("building the manager(Operator) image")
+		cmd := exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", projectImage))
+		_, err = utils.Run(cmd)
+		ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the manager(Operator) image")
 
-	// TODO(user): If you want to change the e2e test vendor from Kind, ensure the image is
-	// built and available before running the tests. Also, remove the following block.
-	By("loading the manager(Operator) image on Kind")
-	err = utils.LoadImageToKindClusterWithName(projectImage)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the manager(Operator) image into Kind")
+		By("loading the manager(Operator) image on Kind")
+		err = utils.LoadImageToKindClusterWithName(projectImage)
+		ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the manager(Operator) image into Kind")
+	}
 
 	By("installing a real OpenZiti controller into the Kind cluster")
-	cmd = exec.Command("make", "kind-openziti-install")
+	cmd := exec.Command("make", "kind-openziti-install")
 	_, err = utils.Run(cmd)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to install the OpenZiti controller Helm chart")
 })

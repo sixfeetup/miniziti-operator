@@ -21,6 +21,7 @@ package e2e
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -36,6 +37,13 @@ const namespace = "ziti"
 
 // serviceAccountName created for the project
 const serviceAccountName = "miniziti-operator-controller-manager"
+
+func installBundlePath() string {
+	if path := os.Getenv("E2E_INSTALL_BUNDLE"); path != "" {
+		return path
+	}
+	return "dist/install.yaml"
+}
 
 var _ = Describe("Manager", Ordered, func() {
 	var controllerPodName string
@@ -60,9 +68,11 @@ var _ = Describe("Manager", Ordered, func() {
 		Expect(err).NotTo(HaveOccurred(), "Failed to label namespace with restricted policy")
 
 		By("installing CRDs")
-		cmd = exec.Command("make", "install")
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to install CRDs")
+		if installMode == "dev" {
+			cmd = exec.Command("make", "install")
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to install CRDs")
+		}
 
 		By("syncing the OpenZiti management credentials into the operator namespace")
 		cmd = exec.Command("make", "kind-openziti-sync-management-secret",
@@ -70,22 +80,35 @@ var _ = Describe("Manager", Ordered, func() {
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to sync OpenZiti management credentials for the operator")
 
-		By("deploying the controller-manager")
-		cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", projectImage))
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager")
+		if installMode == "dev" {
+			By("deploying the controller-manager")
+			cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", projectImage))
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager")
+		} else {
+			By("installing the operator from the install bundle")
+			cmd = exec.Command("kubectl", "apply", "-f", installBundlePath())
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to install the operator bundle")
+		}
 	})
 
 	// After all tests have been executed, clean up by undeploying the controller, uninstalling CRDs,
 	// and deleting the namespace.
 	AfterAll(func() {
-		By("undeploying the controller-manager")
-		cmd := exec.Command("make", "undeploy")
-		_, _ = utils.Run(cmd)
+		if installMode == "dev" {
+			By("undeploying the controller-manager")
+			cmd := exec.Command("make", "undeploy")
+			_, _ = utils.Run(cmd)
 
-		By("uninstalling CRDs")
-		cmd = exec.Command("make", "uninstall")
-		_, _ = utils.Run(cmd)
+			By("uninstalling CRDs")
+			cmd = exec.Command("make", "uninstall")
+			_, _ = utils.Run(cmd)
+		} else {
+			By("removing the operator bundle")
+			cmd := exec.Command("kubectl", "delete", "-f", installBundlePath(), "--ignore-not-found=true")
+			_, _ = utils.Run(cmd)
+		}
 
 	})
 

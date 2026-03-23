@@ -1,5 +1,6 @@
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
+INSTALL_BUNDLE_IMG ?= sixfeetup/miniziti-operator:latest
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -122,6 +123,9 @@ kind-openziti-install: kind-create-local ## Install a real OpenZiti controller i
 		--set crds.enabled=true \
 		--wait \
 		--timeout 10m
+	KUBECONFIG=$(KIND_KUBECONFIG) $(KUBECTL) rollout status deployment/cert-manager-webhook \
+		--namespace cert-manager \
+		--timeout=5m
 	KUBECONFIG=$(KIND_KUBECONFIG) $(HELM) upgrade --install trust-manager jetstack/trust-manager \
 		--namespace cert-manager \
 		--create-namespace \
@@ -130,6 +134,9 @@ kind-openziti-install: kind-create-local ## Install a real OpenZiti controller i
 		--set app.trust.namespace=$(TRUST_MANAGER_TRUST_NAMESPACE) \
 		--wait \
 		--timeout 10m
+	KUBECONFIG=$(KIND_KUBECONFIG) $(KUBECTL) rollout status deployment/trust-manager \
+		--namespace cert-manager \
+		--timeout=5m
 	KUBECONFIG=$(KIND_KUBECONFIG) $(HELM) upgrade --install $(OPENZITI_RELEASE) $(OPENZITI_CHART) \
 		--namespace $(OPENZITI_NAMESPACE) \
 		--create-namespace \
@@ -157,8 +164,17 @@ kind-openziti-uninstall: ## Remove the local OpenZiti controller release from th
 	-KUBECONFIG=$(KIND_KUBECONFIG) $(KUBECTL) delete namespace cert-manager --ignore-not-found
 
 .PHONY: test-e2e
-test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests against the repo-local Kind kubeconfig.
-	KUBECONFIG=$(KIND_KUBECONFIG) KIND=$(KIND) KIND_CLUSTER=$(KIND_CLUSTER) go test -tags=e2e ./test/e2e/ -v -ginkgo.v
+test-e2e: test-e2e-dev ## Run the developer-focused e2e test flow.
+
+.PHONY: test-e2e-dev
+test-e2e-dev: setup-test-e2e manifests generate fmt vet ## Run the e2e tests against the repo-local Kind kubeconfig using a locally built image.
+	KUBECONFIG=$(KIND_KUBECONFIG) KIND=$(KIND) KIND_CLUSTER=$(KIND_CLUSTER) E2E_INSTALL_MODE=dev go test -tags=e2e ./test/e2e/ -v -ginkgo.v
+	$(MAKE) cleanup-test-e2e
+
+.PHONY: test-e2e-install
+test-e2e-install: setup-test-e2e manifests generate fmt vet ## Run the e2e tests against the repo-local Kind kubeconfig using the install bundle.
+	$(MAKE) build-installer IMG=$(INSTALL_BUNDLE_IMG)
+	KUBECONFIG=$(KIND_KUBECONFIG) KIND=$(KIND) KIND_CLUSTER=$(KIND_CLUSTER) E2E_INSTALL_MODE=install E2E_INSTALL_BUNDLE=$(shell pwd)/dist/install.yaml go test -tags=e2e ./test/e2e/ -v -ginkgo.v
 	$(MAKE) cleanup-test-e2e
 
 .PHONY: cleanup-test-e2e
