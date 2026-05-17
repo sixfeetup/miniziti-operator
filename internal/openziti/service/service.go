@@ -73,3 +73,43 @@ func (s *Service) UpdateConfig(ctx context.Context, cfg openziti.ServiceConfig) 
 func (s *Service) DeleteConfig(ctx context.Context, id string) error {
 	return s.client.DeleteConfig(ctx, id)
 }
+
+func (s *Service) FindIdentityByName(ctx context.Context, name string) (*openziti.Identity, error) {
+	return s.client.FindIdentityByName(ctx, name)
+}
+
+func (s *Service) FindEdgeRouterByName(ctx context.Context, name string) (*openziti.EdgeRouter, error) {
+	return s.client.FindEdgeRouterByName(ctx, name)
+}
+
+func (s *Service) FindAccessPolicyByName(ctx context.Context, name string) (*openziti.AccessPolicy, error) {
+	return s.client.FindAccessPolicyByName(ctx, name)
+}
+
+func (s *Service) CreateAccessPolicy(ctx context.Context, policy openziti.AccessPolicy) (*openziti.AccessPolicy, error) {
+	return s.client.CreateAccessPolicy(ctx, policy)
+}
+
+func (s *Service) UpdateAccessPolicy(ctx context.Context, policy openziti.AccessPolicy) (*openziti.AccessPolicy, error) {
+	return s.client.UpdateAccessPolicy(ctx, policy)
+}
+
+func (s *Service) DeleteAccessPolicy(ctx context.Context, id string) error {
+	return s.client.DeleteAccessPolicy(ctx, id)
+}
+
+func (s *Service) FindServiceEdgeRouterPolicyByName(ctx context.Context, name string) (*openziti.ServiceEdgeRouterPolicy, error) {
+	return s.client.FindServiceEdgeRouterPolicyByName(ctx, name)
+}
+
+func (s *Service) CreateServiceEdgeRouterPolicy(ctx context.Context, policy openziti.ServiceEdgeRouterPolicy) (*openziti.ServiceEdgeRouterPolicy, error) {
+	return s.client.CreateServiceEdgeRouterPolicy(ctx, policy)
+}
+
+func (s *Service) UpdateServiceEdgeRouterPolicy(ctx context.Context, policy openziti.ServiceEdgeRouterPolicy) (*openziti.ServiceEdgeRouterPolicy, error) {
+	return s.client.UpdateServiceEdgeRouterPolicy(ctx, policy)
+}
+
+func (s *Service) DeleteServiceEdgeRouterPolicy(ctx context.Context, id string) error {
+	return s.client.DeleteServiceEdgeRouterPolicy(ctx, id)
+}

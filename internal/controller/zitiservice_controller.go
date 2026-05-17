@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
@@ -100,6 +101,25 @@ func (r *ZitiServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	service.Status.ConfigIDs.Intercept = interceptConfig.ID
 	service.Status.ConfigIDs.Host = hostConfig.ID
 
+	if service.Spec.Router != nil {
+		routerPolicies, err := r.desiredRouterPolicies(ctx, &service, backendService.ID)
+		if err != nil {
+			return r.markFailed(ctx, &service, err, "RouterResolutionFailed", true)
+		}
+		bindPolicy, err := r.reconcileAccessPolicy(ctx, service.Status.BindPolicyID, routerPolicies.BindPolicy)
+		if err != nil {
+			return r.markFailed(ctx, &service, err, "BindPolicyFailed", true)
+		}
+		serviceEdgeRouterPolicy, err := r.reconcileServiceEdgeRouterPolicy(ctx, service.Status.ServiceEdgeRouterPolicyID, routerPolicies.ServiceEdgeRouterPolicy)
+		if err != nil {
+			return r.markFailed(ctx, &service, err, "ServiceEdgeRouterPolicyFailed", true)
+		}
+		service.Status.BindPolicyID = bindPolicy.ID
+		service.Status.ServiceEdgeRouterPolicyID = serviceEdgeRouterPolicy.ID
+	} else if err := r.deleteRouterPolicies(ctx, &service); err != nil {
+		return r.markFailed(ctx, &service, err, "RouterPolicyCleanupFailed", true)
+	}
+
 	if err := r.markReady(ctx, &service); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -139,10 +159,107 @@ func (r *ZitiServiceReconciler) reconcileConfig(
 	return r.ServiceManager.CreateConfig(ctx, desired)
 }
 
+func (r *ZitiServiceReconciler) desiredRouterPolicies(
+	ctx context.Context,
+	resource *zitiv1alpha1.ZitiService,
+	serviceID string,
+) (zitiservice.RouterPolicySet, error) {
+	routerName := strings.TrimSpace(resource.Spec.Router.Name)
+	routerIdentity, err := r.ServiceManager.FindIdentityByName(ctx, routerName)
+	if err != nil {
+		return zitiservice.RouterPolicySet{}, err
+	}
+	if routerIdentity == nil || strings.TrimSpace(routerIdentity.ID) == "" {
+		return zitiservice.RouterPolicySet{}, fmt.Errorf("router identity %q not found", routerName)
+	}
+	if !strings.EqualFold(strings.TrimSpace(routerIdentity.Type), "Router") {
+		return zitiservice.RouterPolicySet{}, fmt.Errorf("identity %q is not a Router identity", routerName)
+	}
+
+	edgeRouter, err := r.ServiceManager.FindEdgeRouterByName(ctx, routerName)
+	if err != nil {
+		return zitiservice.RouterPolicySet{}, err
+	}
+	if edgeRouter == nil || strings.TrimSpace(edgeRouter.ID) == "" {
+		return zitiservice.RouterPolicySet{}, fmt.Errorf("edge router %q not found", routerName)
+	}
+
+	policies, ok := zitiservice.RouterPolicies(resource, serviceID, routerIdentity.ID, edgeRouter.ID)
+	if !ok {
+		return zitiservice.RouterPolicySet{}, fmt.Errorf("spec.router.name must not be empty")
+	}
+	return policies, nil
+}
+
+func (r *ZitiServiceReconciler) reconcileAccessPolicy(
+	ctx context.Context,
+	existingID string,
+	desired openziti.AccessPolicy,
+) (*openziti.AccessPolicy, error) {
+	if existingID != "" {
+		desired.ID = existingID
+		updated, err := r.ServiceManager.UpdateAccessPolicy(ctx, desired)
+		if err != nil || updated != nil {
+			return updated, err
+		}
+	}
+	existing, err := r.ServiceManager.FindAccessPolicyByName(ctx, desired.Name)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		desired.ID = existing.ID
+		return r.ServiceManager.UpdateAccessPolicy(ctx, desired)
+	}
+	return r.ServiceManager.CreateAccessPolicy(ctx, desired)
+}
+
+func (r *ZitiServiceReconciler) reconcileServiceEdgeRouterPolicy(
+	ctx context.Context,
+	existingID string,
+	desired openziti.ServiceEdgeRouterPolicy,
+) (*openziti.ServiceEdgeRouterPolicy, error) {
+	if existingID != "" {
+		desired.ID = existingID
+		updated, err := r.ServiceManager.UpdateServiceEdgeRouterPolicy(ctx, desired)
+		if err != nil || updated != nil {
+			return updated, err
+		}
+	}
+	existing, err := r.ServiceManager.FindServiceEdgeRouterPolicyByName(ctx, desired.Name)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		desired.ID = existing.ID
+		return r.ServiceManager.UpdateServiceEdgeRouterPolicy(ctx, desired)
+	}
+	return r.ServiceManager.CreateServiceEdgeRouterPolicy(ctx, desired)
+}
+
+func (r *ZitiServiceReconciler) deleteRouterPolicies(ctx context.Context, service *zitiv1alpha1.ZitiService) error {
+	if service.Status.ServiceEdgeRouterPolicyID != "" {
+		if err := r.ServiceManager.DeleteServiceEdgeRouterPolicy(ctx, service.Status.ServiceEdgeRouterPolicyID); err != nil {
+			return err
+		}
+		service.Status.ServiceEdgeRouterPolicyID = ""
+	}
+	if service.Status.BindPolicyID != "" {
+		if err := r.ServiceManager.DeleteAccessPolicy(ctx, service.Status.BindPolicyID); err != nil {
+			return err
+		}
+		service.Status.BindPolicyID = ""
+	}
+	return nil
+}
+
 func (r *ZitiServiceReconciler) reconcileDelete(ctx context.Context, service *zitiv1alpha1.ZitiService) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	if !slices.Contains(service.GetFinalizers(), zitiServiceFinalizer) {
 		return ctrl.Result{}, nil
+	}
+	if err := r.deleteRouterPolicies(ctx, service); err != nil {
+		return ctrl.Result{}, err
 	}
 	if service.Status.ConfigIDs.Intercept != "" {
 		if err := r.ServiceManager.DeleteConfig(ctx, service.Status.ConfigIDs.Intercept); err != nil {
@@ -254,6 +371,9 @@ func (r *ZitiServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func validateServiceSpec(service *zitiv1alpha1.ZitiService) error {
 	if service.Spec.Name == "" {
 		return fmt.Errorf("spec.name must not be empty")
+	}
+	if service.Spec.Router != nil && strings.TrimSpace(service.Spec.Router.Name) == "" {
+		return fmt.Errorf("spec.router.name must not be empty")
 	}
 	for _, portRange := range service.Spec.Configs.Intercept.PortRanges {
 		if portRange.Low > portRange.High {

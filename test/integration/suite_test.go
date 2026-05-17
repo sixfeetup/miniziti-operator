@@ -46,37 +46,47 @@ import (
 )
 
 var (
-	testEnv   *envtest.Environment
-	k8sClient client.Client
-	ctx       context.Context
-	cancel    context.CancelFunc
+	testEnv      *envtest.Environment
+	k8sClient    client.Client
+	ctx          context.Context
+	cancel       context.CancelFunc
+	fakeOpenZiti *fakeOpenZitiClient
 )
 
 type fakeOpenZitiClient struct {
-	mu             sync.Mutex
-	nextIdentity   int
-	nextService    int
-	nextConfig     int
-	nextPolicy     int
-	identities     map[string]*openziti.Identity
-	services       map[string]*openziti.Service
-	serviceConfigs map[string]*openziti.ServiceConfig
-	accessPolicies map[string]*openziti.AccessPolicy
-	policyFailures map[string]int
+	mu                          sync.Mutex
+	nextIdentity                int
+	nextService                 int
+	nextConfig                  int
+	nextPolicy                  int
+	nextServiceEdgeRouterPolicy int
+	identities                  map[string]*openziti.Identity
+	edgeRouters                 map[string]*openziti.EdgeRouter
+	services                    map[string]*openziti.Service
+	serviceConfigs              map[string]*openziti.ServiceConfig
+	accessPolicies              map[string]*openziti.AccessPolicy
+	serviceEdgeRouterPolicies   map[string]*openziti.ServiceEdgeRouterPolicy
+	policyFailures              map[string]int
 }
 
 func newFakeOpenZitiClient() *fakeOpenZitiClient {
-	return &fakeOpenZitiClient{
-		nextIdentity:   1,
-		nextService:    1,
-		nextConfig:     1,
-		nextPolicy:     1,
-		identities:     map[string]*openziti.Identity{},
-		services:       map[string]*openziti.Service{},
-		serviceConfigs: map[string]*openziti.ServiceConfig{},
-		accessPolicies: map[string]*openziti.AccessPolicy{},
-		policyFailures: map[string]int{},
+	client := &fakeOpenZitiClient{
+		nextIdentity:                1,
+		nextService:                 1,
+		nextConfig:                  1,
+		nextPolicy:                  1,
+		nextServiceEdgeRouterPolicy: 1,
+		identities:                  map[string]*openziti.Identity{},
+		edgeRouters:                 map[string]*openziti.EdgeRouter{},
+		services:                    map[string]*openziti.Service{},
+		serviceConfigs:              map[string]*openziti.ServiceConfig{},
+		accessPolicies:              map[string]*openziti.AccessPolicy{},
+		serviceEdgeRouterPolicies:   map[string]*openziti.ServiceEdgeRouterPolicy{},
+		policyFailures:              map[string]int{},
 	}
+	client.identities["router-identity-1"] = &openziti.Identity{ID: "router-identity-1", Name: "ziti-prod-router", Type: "Router"}
+	client.edgeRouters["edge-router-1"] = &openziti.EdgeRouter{ID: "edge-router-1", Name: "ziti-prod-router"}
+	return client
 }
 
 func (f *fakeOpenZitiClient) Authenticate(context.Context, credentials.ManagementConfig) error {
@@ -247,6 +257,18 @@ func (f *fakeOpenZitiClient) DeleteConfig(_ context.Context, id string) error {
 	return nil
 }
 
+func (f *fakeOpenZitiClient) FindEdgeRouterByName(_ context.Context, name string) (*openziti.EdgeRouter, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, router := range f.edgeRouters {
+		if router.Name == name {
+			copy := *router
+			return &copy, nil
+		}
+	}
+	return nil, nil
+}
+
 func (f *fakeOpenZitiClient) GetAccessPolicy(_ context.Context, id string) (*openziti.AccessPolicy, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -314,6 +336,68 @@ func (f *fakeOpenZitiClient) DeleteAccessPolicy(_ context.Context, id string) er
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.accessPolicies, id)
+	return nil
+}
+
+func (f *fakeOpenZitiClient) GetServiceEdgeRouterPolicy(_ context.Context, id string) (*openziti.ServiceEdgeRouterPolicy, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if policy, ok := f.serviceEdgeRouterPolicies[id]; ok {
+		copy := cloneServiceEdgeRouterPolicy(*policy)
+		return &copy, nil
+	}
+	return nil, nil
+}
+
+func (f *fakeOpenZitiClient) FindServiceEdgeRouterPolicyByName(_ context.Context, name string) (*openziti.ServiceEdgeRouterPolicy, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, policy := range f.serviceEdgeRouterPolicies {
+		if policy.Name == name {
+			copy := cloneServiceEdgeRouterPolicy(*policy)
+			return &copy, nil
+		}
+	}
+	return nil, nil
+}
+
+func (f *fakeOpenZitiClient) CreateServiceEdgeRouterPolicy(
+	_ context.Context,
+	policy openziti.ServiceEdgeRouterPolicy,
+) (*openziti.ServiceEdgeRouterPolicy, error) {
+	if err := f.fakePolicyFailure(policy.Name); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	policy.ID = fmt.Sprintf("service-edge-router-policy-%d", f.nextServiceEdgeRouterPolicy)
+	f.nextServiceEdgeRouterPolicy++
+	copy := cloneServiceEdgeRouterPolicy(policy)
+	f.serviceEdgeRouterPolicies[policy.ID] = &copy
+	return &copy, nil
+}
+
+func (f *fakeOpenZitiClient) UpdateServiceEdgeRouterPolicy(
+	_ context.Context,
+	policy openziti.ServiceEdgeRouterPolicy,
+) (*openziti.ServiceEdgeRouterPolicy, error) {
+	if err := f.fakePolicyFailure(policy.Name); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.serviceEdgeRouterPolicies[policy.ID]; !ok {
+		return nil, nil
+	}
+	copy := cloneServiceEdgeRouterPolicy(policy)
+	f.serviceEdgeRouterPolicies[policy.ID] = &copy
+	return &copy, nil
+}
+
+func (f *fakeOpenZitiClient) DeleteServiceEdgeRouterPolicy(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.serviceEdgeRouterPolicies, id)
 	return nil
 }
 
@@ -467,6 +551,12 @@ func cloneAccessPolicy(policy openziti.AccessPolicy) openziti.AccessPolicy {
 	return policy
 }
 
+func cloneServiceEdgeRouterPolicy(policy openziti.ServiceEdgeRouterPolicy) openziti.ServiceEdgeRouterPolicy {
+	policy.EdgeRouterRoles = append([]string(nil), policy.EdgeRouterRoles...)
+	policy.ServiceRoles = append([]string(nil), policy.ServiceRoles...)
+	return policy
+}
+
 func TestControllers(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "integration suite")
@@ -497,6 +587,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	fakeClient := newFakeOpenZitiClient()
+	fakeOpenZiti = fakeClient
 
 	reconciler := &controller.ZitiIdentityReconciler{
 		Client:          mgr.GetClient(),

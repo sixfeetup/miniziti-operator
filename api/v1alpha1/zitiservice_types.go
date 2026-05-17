@@ -53,14 +53,24 @@ type ZitiServiceConfigsSpec struct {
 	Host      HostConfigSpec      `json:"host"`
 }
 
+// ServiceRouterSpec identifies the existing OpenZiti router that hosts a service.
+type ServiceRouterSpec struct {
+	// Name is the exact OpenZiti router and router identity name.
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+}
+
 // ZitiServiceSpec defines the desired state of ZitiService.
 type ZitiServiceSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
 	// +optional
 	// +listType=set
-	RoleAttributes []string               `json:"roleAttributes,omitempty"`
-	Configs        ZitiServiceConfigsSpec `json:"configs"`
+	RoleAttributes []string `json:"roleAttributes,omitempty"`
+	// Router enables server-side router wiring for a functional hosted service.
+	// +optional
+	Router  *ServiceRouterSpec     `json:"router,omitempty"`
+	Configs ZitiServiceConfigsSpec `json:"configs"`
 }
 
 // ZitiServiceConfigIDs captures the managed external config identifiers.
@@ -76,6 +86,10 @@ type ZitiServiceStatus struct {
 	CommonStatus `json:",inline"`
 	// +optional
 	ConfigIDs ZitiServiceConfigIDs `json:"configIDs,omitempty"`
+	// +optional
+	BindPolicyID string `json:"bindPolicyID,omitempty"`
+	// +optional
+	ServiceEdgeRouterPolicyID string `json:"serviceEdgeRouterPolicyID,omitempty"`
 }
 
 // +kubebuilder:object:root=true

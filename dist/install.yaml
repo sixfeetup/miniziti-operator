@@ -461,6 +461,18 @@ spec:
                   type: string
                 type: array
                 x-kubernetes-list-type: set
+              router:
+                description: Router enables server-side router wiring for a functional
+                  hosted service.
+                properties:
+                  name:
+                    description: Name is the exact OpenZiti router and router identity
+                      name.
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
             required:
             - configs
             - name
@@ -468,6 +480,8 @@ spec:
           status:
             description: ZitiServiceStatus defines the observed state of ZitiService.
             properties:
+              bindPolicyID:
+                type: string
               conditions:
                 description: Conditions reports readiness, reconciliation progress,
                   and degraded states.
@@ -548,6 +562,8 @@ spec:
                   processed by the operator.
                 format: int64
                 type: integer
+              serviceEdgeRouterPolicyID:
+                type: string
             type: object
         type: object
     served: true

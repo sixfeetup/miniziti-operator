@@ -3,8 +3,8 @@
 `miniziti-operator` is a scratch-our-own-itch Kubernetes operator for making
 the most common OpenZiti actions declarative from cluster manifests. It
 reconciles `ZitiIdentity`, `ZitiService`, and `ZitiAccessPolicy` custom
-resources into the corresponding OpenZiti identities, services, and access
-policies.
+resources into the corresponding OpenZiti identities, services, service hosting
+policies, and access policies.
 
 The operator is intentionally narrow. It focuses on the common declarative
 workflow of:
@@ -53,7 +53,7 @@ type: Opaque
 stringData:
   controllerUrl: https://ziti.example.com/edge/management/v1
   username: admin
-  password: change-me
+  password: "[REDACTED]"
 ```
 
 If your management endpoint uses a private or self-signed CA, add `caBundle` to
@@ -95,7 +95,7 @@ spec:
     jwtSecretName: alice-ziti-jwt
 ```
 
-Example service:
+Example service with router-side hosting enabled:
 
 ```yaml
 apiVersion: ziti.sixfeetup.com/v1alpha1
@@ -107,6 +107,8 @@ spec:
   name: argocd
   roleAttributes:
     - argocd
+  router:
+    name: ziti-prod-router
   configs:
     intercept:
       protocols:
@@ -121,6 +123,14 @@ spec:
       address: argocd-server.argocd.svc.cluster.local
       port: 443
 ```
+
+When `spec.router.name` is set, the operator also creates the OpenZiti `Bind`
+service policy and service-edge-router policy needed for the named router to
+host the service. The router name must match an existing OpenZiti edge router
+and its router identity.
+
+Dial access remains a separate `ZitiAccessPolicy`, so you can grant client/user
+access independently from service hosting.
 
 Example access policy:
 
@@ -161,6 +171,8 @@ The operator reports reconciliation state through status fields including:
 - `status.conditions`
 - `status.observedGeneration`
 - `status.lastError`
+- `status.configIDs` on `ZitiService`
+- `status.bindPolicyID` and `status.serviceEdgeRouterPolicyID` on routed `ZitiService` resources
 
 ### 5. Uninstall
 

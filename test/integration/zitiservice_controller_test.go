@@ -65,6 +65,53 @@ func newZitiService(name string) *unstructured.Unstructured {
 }
 
 var _ = Describe("ZitiService controller", func() {
+	It("creates router-side bind and service edge router policies when a router is declared", func() {
+		service := newZitiService("argocd-router")
+		Expect(unstructured.SetNestedField(
+			service.Object,
+			map[string]any{"name": "ziti-prod-router"},
+			"spec",
+			"router",
+		)).To(Succeed())
+		Expect(k8sClient.Create(ctx, service)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			stored := newUnstructuredWithGVK(zitiServiceGVK)
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(service), stored)).To(Succeed())
+
+			serviceID, found, err := unstructured.NestedString(stored.Object, "status", "id")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(found).To(BeTrue())
+			g.Expect(serviceID).NotTo(BeEmpty())
+
+			bindPolicyID, found, err := unstructured.NestedString(stored.Object, "status", "bindPolicyID")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(found).To(BeTrue())
+			g.Expect(bindPolicyID).NotTo(BeEmpty())
+
+			serviceEdgeRouterPolicyID, found, err := unstructured.NestedString(stored.Object, "status", "serviceEdgeRouterPolicyID")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(found).To(BeTrue())
+			g.Expect(serviceEdgeRouterPolicyID).NotTo(BeEmpty())
+
+			fakeOpenZiti.mu.Lock()
+			defer fakeOpenZiti.mu.Unlock()
+
+			bindPolicy := fakeOpenZiti.accessPolicies[bindPolicyID]
+			g.Expect(bindPolicy).NotTo(BeNil())
+			g.Expect(bindPolicy.Name).To(Equal("argocd-router-bind-policy"))
+			g.Expect(bindPolicy.Type).To(Equal("Bind"))
+			g.Expect(bindPolicy.ServiceRolesRaw).To(Equal([]string{"@" + serviceID}))
+			g.Expect(bindPolicy.IdentityRolesRaw).To(Equal([]string{"@router-identity-1"}))
+
+			serviceEdgeRouterPolicy := fakeOpenZiti.serviceEdgeRouterPolicies[serviceEdgeRouterPolicyID]
+			g.Expect(serviceEdgeRouterPolicy).NotTo(BeNil())
+			g.Expect(serviceEdgeRouterPolicy.Name).To(Equal("argocd-router-only"))
+			g.Expect(serviceEdgeRouterPolicy.ServiceRoles).To(Equal([]string{"@" + serviceID}))
+			g.Expect(serviceEdgeRouterPolicy.EdgeRouterRoles).To(Equal([]string{"@edge-router-1"}))
+		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
+	})
+
 	It("creates a service and reports ready state", func() {
 		service := newZitiService("argocd")
 		Expect(k8sClient.Create(ctx, service)).To(Succeed())

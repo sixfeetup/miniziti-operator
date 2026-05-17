@@ -63,6 +63,12 @@ type ServiceConfig struct {
 	Payload map[string]any
 }
 
+// EdgeRouter models the subset of OpenZiti edge router state needed by the operator.
+type EdgeRouter struct {
+	ID   string
+	Name string
+}
+
 // AccessPolicy models the subset of OpenZiti service-policy state needed by the operator.
 type AccessPolicy struct {
 	ID               string
@@ -73,6 +79,15 @@ type AccessPolicy struct {
 	IdentityRolesRaw []string
 	ServiceRolesRaw  []string
 	Semantic         string
+}
+
+// ServiceEdgeRouterPolicy models OpenZiti service-edge-router policy state.
+type ServiceEdgeRouterPolicy struct {
+	ID              string
+	Name            string
+	EdgeRouterRoles []string
+	ServiceRoles    []string
+	Semantic        string
 }
 
 // Client describes the management operations the operator needs from OpenZiti.
@@ -97,11 +112,19 @@ type Client interface {
 	UpdateConfig(context.Context, ServiceConfig) (*ServiceConfig, error)
 	DeleteConfig(context.Context, string) error
 
+	FindEdgeRouterByName(context.Context, string) (*EdgeRouter, error)
+
 	GetAccessPolicy(context.Context, string) (*AccessPolicy, error)
 	FindAccessPolicyByName(context.Context, string) (*AccessPolicy, error)
 	CreateAccessPolicy(context.Context, AccessPolicy) (*AccessPolicy, error)
 	UpdateAccessPolicy(context.Context, AccessPolicy) (*AccessPolicy, error)
 	DeleteAccessPolicy(context.Context, string) error
+
+	GetServiceEdgeRouterPolicy(context.Context, string) (*ServiceEdgeRouterPolicy, error)
+	FindServiceEdgeRouterPolicyByName(context.Context, string) (*ServiceEdgeRouterPolicy, error)
+	CreateServiceEdgeRouterPolicy(context.Context, ServiceEdgeRouterPolicy) (*ServiceEdgeRouterPolicy, error)
+	UpdateServiceEdgeRouterPolicy(context.Context, ServiceEdgeRouterPolicy) (*ServiceEdgeRouterPolicy, error)
+	DeleteServiceEdgeRouterPolicy(context.Context, string) error
 }
 
 // ConfigLoader returns the latest management credentials.
@@ -177,17 +200,34 @@ func (c *ManagementClient) GetIdentity(ctx context.Context, id string) (*Identit
 
 func (c *ManagementClient) FindIdentityByName(ctx context.Context, name string) (*Identity, error) {
 	return useAuthenticatedClient(ctx, c, c.loadCurrentConfig, func(api *rest_management_api_client.ZitiEdgeManagement) (*Identity, error) {
-		resp, err := api.Identity.ListIdentities(identityapi.NewListIdentitiesParamsWithContext(ctx), nil)
-		if err != nil {
-			return nil, wrapAPICallError("list identities", err)
-		}
-		for _, item := range resp.Payload.Data {
-			identity := identityFromEnvelope(&rest_model.DetailIdentityEnvelope{Data: item})
-			if identity != nil && identity.Name == name {
-				return identity, nil
+		var offset int64
+		limit := int64(100)
+
+		for {
+			resp, err := api.Identity.ListIdentities(
+				identityapi.NewListIdentitiesParamsWithContext(ctx).WithLimit(&limit).WithOffset(&offset),
+				nil,
+			)
+			if err != nil {
+				return nil, wrapAPICallError("list identities", err)
 			}
+			if resp.Payload == nil {
+				return nil, nil
+			}
+
+			count := 0
+			for _, item := range resp.Payload.Data {
+				count++
+				identity := identityFromEnvelope(&rest_model.DetailIdentityEnvelope{Data: item})
+				if identity != nil && identity.Name == name {
+					return identity, nil
+				}
+			}
+			if count == 0 || count < int(limit) {
+				return nil, nil
+			}
+			offset += int64(count)
 		}
-		return nil, nil
 	})
 }
 
@@ -430,17 +470,34 @@ func (c *ManagementClient) GetAccessPolicy(ctx context.Context, id string) (*Acc
 
 func (c *ManagementClient) FindAccessPolicyByName(ctx context.Context, name string) (*AccessPolicy, error) {
 	return useAuthenticatedClient(ctx, c, c.loadCurrentConfig, func(api *rest_management_api_client.ZitiEdgeManagement) (*AccessPolicy, error) {
-		resp, err := api.ServicePolicy.ListServicePolicies(servicepolicyapi.NewListServicePoliciesParamsWithContext(ctx), nil)
-		if err != nil {
-			return nil, wrapAPICallError("list access policies", err)
-		}
-		for _, item := range resp.Payload.Data {
-			policy := accessPolicyFromEnvelope(&rest_model.DetailServicePolicyEnvelop{Data: item})
-			if policy != nil && policy.Name == name {
-				return policy, nil
+		var offset int64
+		limit := int64(100)
+
+		for {
+			resp, err := api.ServicePolicy.ListServicePolicies(
+				servicepolicyapi.NewListServicePoliciesParamsWithContext(ctx).WithLimit(&limit).WithOffset(&offset),
+				nil,
+			)
+			if err != nil {
+				return nil, wrapAPICallError("list access policies", err)
 			}
+			if resp.Payload == nil {
+				return nil, nil
+			}
+
+			count := 0
+			for _, item := range resp.Payload.Data {
+				count++
+				policy := accessPolicyFromEnvelope(&rest_model.DetailServicePolicyEnvelop{Data: item})
+				if policy != nil && policy.Name == name {
+					return policy, nil
+				}
+			}
+			if count == 0 || count < int(limit) {
+				return nil, nil
+			}
+			offset += int64(count)
 		}
-		return nil, nil
 	})
 }
 

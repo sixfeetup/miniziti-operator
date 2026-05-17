@@ -24,27 +24,33 @@ import (
 
 // FakeClient provides test-controlled behavior for reconcile and adapter tests.
 type FakeClient struct {
-	AuthenticateFunc           func(context.Context, credentials.ManagementConfig) error
-	GetIdentityFunc            func(context.Context, string) (*Identity, error)
-	FindIdentityByNameFunc     func(context.Context, string) (*Identity, error)
-	CreateIdentityFunc         func(context.Context, Identity) (*Identity, error)
-	UpdateIdentityFunc         func(context.Context, Identity) (*Identity, error)
-	DeleteIdentityFunc         func(context.Context, string) error
-	GetEnrollmentJWTFunc       func(context.Context, string) (string, error)
-	GetServiceFunc             func(context.Context, string) (*Service, error)
-	FindServiceByNameFunc      func(context.Context, string) (*Service, error)
-	CreateServiceFunc          func(context.Context, Service) (*Service, error)
-	UpdateServiceFunc          func(context.Context, Service) (*Service, error)
-	DeleteServiceFunc          func(context.Context, string) error
-	GetConfigFunc              func(context.Context, string) (*ServiceConfig, error)
-	CreateConfigFunc           func(context.Context, ServiceConfig) (*ServiceConfig, error)
-	UpdateConfigFunc           func(context.Context, ServiceConfig) (*ServiceConfig, error)
-	DeleteConfigFunc           func(context.Context, string) error
-	GetAccessPolicyFunc        func(context.Context, string) (*AccessPolicy, error)
-	FindAccessPolicyByNameFunc func(context.Context, string) (*AccessPolicy, error)
-	CreateAccessPolicyFunc     func(context.Context, AccessPolicy) (*AccessPolicy, error)
-	UpdateAccessPolicyFunc     func(context.Context, AccessPolicy) (*AccessPolicy, error)
-	DeleteAccessPolicyFunc     func(context.Context, string) error
+	AuthenticateFunc                      func(context.Context, credentials.ManagementConfig) error
+	GetIdentityFunc                       func(context.Context, string) (*Identity, error)
+	FindIdentityByNameFunc                func(context.Context, string) (*Identity, error)
+	CreateIdentityFunc                    func(context.Context, Identity) (*Identity, error)
+	UpdateIdentityFunc                    func(context.Context, Identity) (*Identity, error)
+	DeleteIdentityFunc                    func(context.Context, string) error
+	GetEnrollmentJWTFunc                  func(context.Context, string) (string, error)
+	GetServiceFunc                        func(context.Context, string) (*Service, error)
+	FindServiceByNameFunc                 func(context.Context, string) (*Service, error)
+	CreateServiceFunc                     func(context.Context, Service) (*Service, error)
+	UpdateServiceFunc                     func(context.Context, Service) (*Service, error)
+	DeleteServiceFunc                     func(context.Context, string) error
+	GetConfigFunc                         func(context.Context, string) (*ServiceConfig, error)
+	CreateConfigFunc                      func(context.Context, ServiceConfig) (*ServiceConfig, error)
+	UpdateConfigFunc                      func(context.Context, ServiceConfig) (*ServiceConfig, error)
+	DeleteConfigFunc                      func(context.Context, string) error
+	FindEdgeRouterByNameFunc              func(context.Context, string) (*EdgeRouter, error)
+	GetAccessPolicyFunc                   func(context.Context, string) (*AccessPolicy, error)
+	FindAccessPolicyByNameFunc            func(context.Context, string) (*AccessPolicy, error)
+	CreateAccessPolicyFunc                func(context.Context, AccessPolicy) (*AccessPolicy, error)
+	UpdateAccessPolicyFunc                func(context.Context, AccessPolicy) (*AccessPolicy, error)
+	DeleteAccessPolicyFunc                func(context.Context, string) error
+	GetServiceEdgeRouterPolicyFunc        func(context.Context, string) (*ServiceEdgeRouterPolicy, error)
+	FindServiceEdgeRouterPolicyByNameFunc func(context.Context, string) (*ServiceEdgeRouterPolicy, error)
+	CreateServiceEdgeRouterPolicyFunc     func(context.Context, ServiceEdgeRouterPolicy) (*ServiceEdgeRouterPolicy, error)
+	UpdateServiceEdgeRouterPolicyFunc     func(context.Context, ServiceEdgeRouterPolicy) (*ServiceEdgeRouterPolicy, error)
+	DeleteServiceEdgeRouterPolicyFunc     func(context.Context, string) error
 }
 
 func (f *FakeClient) Authenticate(ctx context.Context, cfg credentials.ManagementConfig) error {
@@ -159,6 +165,13 @@ func (f *FakeClient) DeleteConfig(ctx context.Context, id string) error {
 	return nil
 }
 
+func (f *FakeClient) FindEdgeRouterByName(ctx context.Context, name string) (*EdgeRouter, error) {
+	if f.FindEdgeRouterByNameFunc != nil {
+		return f.FindEdgeRouterByNameFunc(ctx, name)
+	}
+	return nil, nil
+}
+
 func (f *FakeClient) GetAccessPolicy(ctx context.Context, id string) (*AccessPolicy, error) {
 	if f.GetAccessPolicyFunc != nil {
 		return f.GetAccessPolicyFunc(ctx, id)
@@ -190,6 +203,41 @@ func (f *FakeClient) UpdateAccessPolicy(ctx context.Context, policy AccessPolicy
 func (f *FakeClient) DeleteAccessPolicy(ctx context.Context, id string) error {
 	if f.DeleteAccessPolicyFunc != nil {
 		return f.DeleteAccessPolicyFunc(ctx, id)
+	}
+	return nil
+}
+
+func (f *FakeClient) GetServiceEdgeRouterPolicy(ctx context.Context, id string) (*ServiceEdgeRouterPolicy, error) {
+	if f.GetServiceEdgeRouterPolicyFunc != nil {
+		return f.GetServiceEdgeRouterPolicyFunc(ctx, id)
+	}
+	return nil, nil
+}
+
+func (f *FakeClient) FindServiceEdgeRouterPolicyByName(ctx context.Context, name string) (*ServiceEdgeRouterPolicy, error) {
+	if f.FindServiceEdgeRouterPolicyByNameFunc != nil {
+		return f.FindServiceEdgeRouterPolicyByNameFunc(ctx, name)
+	}
+	return nil, nil
+}
+
+func (f *FakeClient) CreateServiceEdgeRouterPolicy(ctx context.Context, policy ServiceEdgeRouterPolicy) (*ServiceEdgeRouterPolicy, error) {
+	if f.CreateServiceEdgeRouterPolicyFunc != nil {
+		return f.CreateServiceEdgeRouterPolicyFunc(ctx, policy)
+	}
+	return &policy, nil
+}
+
+func (f *FakeClient) UpdateServiceEdgeRouterPolicy(ctx context.Context, policy ServiceEdgeRouterPolicy) (*ServiceEdgeRouterPolicy, error) {
+	if f.UpdateServiceEdgeRouterPolicyFunc != nil {
+		return f.UpdateServiceEdgeRouterPolicyFunc(ctx, policy)
+	}
+	return &policy, nil
+}
+
+func (f *FakeClient) DeleteServiceEdgeRouterPolicy(ctx context.Context, id string) error {
+	if f.DeleteServiceEdgeRouterPolicyFunc != nil {
+		return f.DeleteServiceEdgeRouterPolicyFunc(ctx, id)
 	}
 	return nil
 }
