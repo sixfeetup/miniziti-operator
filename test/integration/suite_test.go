@@ -70,7 +70,7 @@ type fakeOpenZitiClient struct {
 }
 
 func newFakeOpenZitiClient() *fakeOpenZitiClient {
-	client := &fakeOpenZitiClient{
+	fakeClient := &fakeOpenZitiClient{
 		nextIdentity:                1,
 		nextService:                 1,
 		nextConfig:                  1,
@@ -84,9 +84,16 @@ func newFakeOpenZitiClient() *fakeOpenZitiClient {
 		serviceEdgeRouterPolicies:   map[string]*openziti.ServiceEdgeRouterPolicy{},
 		policyFailures:              map[string]int{},
 	}
-	client.identities["router-identity-1"] = &openziti.Identity{ID: "router-identity-1", Name: "ziti-prod-router", Type: "Router"}
-	client.edgeRouters["edge-router-1"] = &openziti.EdgeRouter{ID: "edge-router-1", Name: "ziti-prod-router"}
-	return client
+	fakeClient.identities["router-identity-1"] = &openziti.Identity{
+		ID:   "router-identity-1",
+		Name: "ziti-prod-router",
+		Type: "Router",
+	}
+	fakeClient.edgeRouters["edge-router-1"] = &openziti.EdgeRouter{
+		ID:   "edge-router-1",
+		Name: "ziti-prod-router",
+	}
+	return fakeClient
 }
 
 func (f *fakeOpenZitiClient) Authenticate(context.Context, credentials.ManagementConfig) error {
@@ -339,7 +346,10 @@ func (f *fakeOpenZitiClient) DeleteAccessPolicy(_ context.Context, id string) er
 	return nil
 }
 
-func (f *fakeOpenZitiClient) GetServiceEdgeRouterPolicy(_ context.Context, id string) (*openziti.ServiceEdgeRouterPolicy, error) {
+func (f *fakeOpenZitiClient) GetServiceEdgeRouterPolicy(
+	_ context.Context,
+	id string,
+) (*openziti.ServiceEdgeRouterPolicy, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if policy, ok := f.serviceEdgeRouterPolicies[id]; ok {
@@ -349,7 +359,10 @@ func (f *fakeOpenZitiClient) GetServiceEdgeRouterPolicy(_ context.Context, id st
 	return nil, nil
 }
 
-func (f *fakeOpenZitiClient) FindServiceEdgeRouterPolicyByName(_ context.Context, name string) (*openziti.ServiceEdgeRouterPolicy, error) {
+func (f *fakeOpenZitiClient) FindServiceEdgeRouterPolicyByName(
+	_ context.Context,
+	name string,
+) (*openziti.ServiceEdgeRouterPolicy, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, policy := range f.serviceEdgeRouterPolicies {

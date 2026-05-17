@@ -89,7 +89,11 @@ var _ = Describe("ZitiService controller", func() {
 			g.Expect(found).To(BeTrue())
 			g.Expect(bindPolicyID).NotTo(BeEmpty())
 
-			serviceEdgeRouterPolicyID, found, err := unstructured.NestedString(stored.Object, "status", "serviceEdgeRouterPolicyID")
+			serviceEdgeRouterPolicyID, found, err := unstructured.NestedString(
+				stored.Object,
+				"status",
+				"serviceEdgeRouterPolicyID",
+			)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(found).To(BeTrue())
 			g.Expect(serviceEdgeRouterPolicyID).NotTo(BeEmpty())
