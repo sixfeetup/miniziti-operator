@@ -19,6 +19,7 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/openziti/edge-api/rest_management_api_client"
@@ -76,6 +77,47 @@ func TestUseAuthenticatedClientReauthenticatesOnUnauthorized(t *testing.T) {
 		runCalls++
 		if runCalls == 1 {
 			return "", codedError{code: 401}
+		}
+		return "ok", nil
+	})
+	if err != nil {
+		t.Fatalf("useAuthenticatedClient returned error: %v", err)
+	}
+	if result != "ok" {
+		t.Fatalf("useAuthenticatedClient returned %q", result)
+	}
+	if authCalls != 2 {
+		t.Fatalf("expected 2 authentications, got %d", authCalls)
+	}
+	if runCalls != 2 {
+		t.Fatalf("expected 2 operation attempts, got %d", runCalls)
+	}
+}
+
+func TestUseAuthenticatedClientReauthenticatesOnWrappedUnauthorized(t *testing.T) {
+	ctx := context.Background()
+	cfg := credentials.ManagementConfig{
+		ControllerURL: "https://controller.example.com/edge/management/v1",
+		Username:      "admin",
+		Password:      "secret",
+	}
+
+	authCalls := 0
+	client := &ManagementClient{
+		loadConfig: func(context.Context) (credentials.ManagementConfig, error) {
+			return cfg, nil
+		},
+		authenticate: func(context.Context, credentials.ManagementConfig) (*rest_management_api_client.ZitiEdgeManagement, error) {
+			authCalls++
+			return &rest_management_api_client.ZitiEdgeManagement{}, nil
+		},
+	}
+
+	runCalls := 0
+	result, err := useAuthenticatedClient(ctx, client, client.loadCurrentConfig, func(*rest_management_api_client.ZitiEdgeManagement) (string, error) {
+		runCalls++
+		if runCalls == 1 {
+			return "", fmt.Errorf("update service: %w", codedError{code: 401})
 		}
 		return "ok", nil
 	})

@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -644,11 +645,8 @@ func isStatusCode(err error, code int) bool {
 	type coder interface {
 		Code() int
 	}
-	if err == nil {
-		return false
-	}
-	response, ok := err.(coder)
-	return ok && response.Code() == code
+	var response coder
+	return errors.As(err, &response) && response.Code() == code
 }
 
 func wrapAPICallError(action string, err error) error {
