@@ -97,6 +97,7 @@ type Client interface {
 
 	GetIdentity(context.Context, string) (*Identity, error)
 	FindIdentityByName(context.Context, string) (*Identity, error)
+	ListIdentities(context.Context) ([]Identity, error)
 	CreateIdentity(context.Context, Identity) (*Identity, error)
 	UpdateIdentity(context.Context, Identity) (*Identity, error)
 	DeleteIdentity(context.Context, string) error
@@ -200,9 +201,23 @@ func (c *ManagementClient) GetIdentity(ctx context.Context, id string) (*Identit
 }
 
 func (c *ManagementClient) FindIdentityByName(ctx context.Context, name string) (*Identity, error) {
-	return useAuthenticatedClient(ctx, c, c.loadCurrentConfig, func(api *rest_management_api_client.ZitiEdgeManagement) (*Identity, error) {
+	identities, err := c.ListIdentities(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range identities {
+		if identities[i].Name == name {
+			return &identities[i], nil
+		}
+	}
+	return nil, nil
+}
+
+func (c *ManagementClient) ListIdentities(ctx context.Context) ([]Identity, error) {
+	return useAuthenticatedClient(ctx, c, c.loadCurrentConfig, func(api *rest_management_api_client.ZitiEdgeManagement) ([]Identity, error) {
 		var offset int64
 		limit := int64(100)
+		identities := []Identity(nil)
 
 		for {
 			resp, err := api.Identity.ListIdentities(
@@ -213,19 +228,19 @@ func (c *ManagementClient) FindIdentityByName(ctx context.Context, name string) 
 				return nil, wrapAPICallError("list identities", err)
 			}
 			if resp.Payload == nil {
-				return nil, nil
+				return identities, nil
 			}
 
 			count := 0
 			for _, item := range resp.Payload.Data {
 				count++
 				identity := identityFromEnvelope(&rest_model.DetailIdentityEnvelope{Data: item})
-				if identity != nil && identity.Name == name {
-					return identity, nil
+				if identity != nil {
+					identities = append(identities, *identity)
 				}
 			}
 			if count == 0 || count < int(limit) {
-				return nil, nil
+				return identities, nil
 			}
 			offset += int64(count)
 		}

@@ -32,6 +32,7 @@ import (
 
 	zitiv1alpha1 "example.com/miniziti-operator/api/v1alpha1"
 	openziti "example.com/miniziti-operator/internal/openziti/client"
+	identityservice "example.com/miniziti-operator/internal/openziti/identity"
 	policyservice "example.com/miniziti-operator/internal/openziti/policy"
 )
 
@@ -40,9 +41,10 @@ const zitiAccessPolicyFinalizer = "ziti.sixfeetup.com/access-policy-finalizer"
 // ZitiAccessPolicyReconciler reconciles a ZitiAccessPolicy object.
 type ZitiAccessPolicyReconciler struct {
 	client.Client
-	Scheme        *runtime.Scheme
-	Recorder      record.EventRecorder
-	PolicyService *policyservice.Service
+	Scheme          *runtime.Scheme
+	Recorder        record.EventRecorder
+	IdentityService *identityservice.Service
+	PolicyService   *policyservice.Service
 }
 
 // +kubebuilder:rbac:groups=ziti.sixfeetup.com,resources=zitiaccesspolicies,verbs=get;list;watch;create;update;patch;delete
@@ -145,8 +147,15 @@ func (r *ZitiAccessPolicyReconciler) resolveSelectors(
 			identityCount++
 		}
 		if matchesNames(policy.Spec.IdentitySelector.MatchNames, identities.Items[i].Spec.Name) && identities.Items[i].Status.ID != "" {
-			identitySelector.IDs = append(identitySelector.IDs, identities.Items[i].Status.ID)
+			identitySelector.IDs = appendUnique(identitySelector.IDs, identities.Items[i].Status.ID)
 		}
+	}
+	if identityCount == 0 {
+		backendCount, err := r.resolveBackendIdentitySelector(ctx, policy.Spec.IdentitySelector, &identitySelector)
+		if err != nil {
+			return policyservice.ResolvedSelector{}, policyservice.ResolvedSelector{}, 0, 0, err
+		}
+		identityCount = backendCount
 	}
 
 	serviceSelector := policyservice.ResolvedSelector{
@@ -158,11 +167,37 @@ func (r *ZitiAccessPolicyReconciler) resolveSelectors(
 			serviceCount++
 		}
 		if matchesNames(policy.Spec.ServiceSelector.MatchNames, services.Items[i].Spec.Name) && services.Items[i].Status.ID != "" {
-			serviceSelector.IDs = append(serviceSelector.IDs, services.Items[i].Status.ID)
+			serviceSelector.IDs = appendUnique(serviceSelector.IDs, services.Items[i].Status.ID)
 		}
 	}
 
 	return identitySelector, serviceSelector, identityCount, serviceCount, nil
+}
+
+func (r *ZitiAccessPolicyReconciler) resolveBackendIdentitySelector(
+	ctx context.Context,
+	selector zitiv1alpha1.SelectorSpec,
+	resolved *policyservice.ResolvedSelector,
+) (int, error) {
+	if r.IdentityService == nil {
+		return 0, fmt.Errorf("identity backend service is not configured")
+	}
+	identities, err := r.IdentityService.List(ctx)
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for i := range identities {
+		identity := identities[i]
+		if !matchesSelector(selector, identity.Name, identity.RoleAttributes) {
+			continue
+		}
+		count++
+		if matchesNames(selector.MatchNames, identity.Name) && identity.ID != "" {
+			resolved.IDs = appendUnique(resolved.IDs, identity.ID)
+		}
+	}
+	return count, nil
 }
 
 func (r *ZitiAccessPolicyReconciler) reconcileDelete(ctx context.Context, policy *zitiv1alpha1.ZitiAccessPolicy) (ctrl.Result, error) {
@@ -284,6 +319,13 @@ func validateAccessPolicySpec(policy *zitiv1alpha1.ZitiAccessPolicy) error {
 
 func selectorDefined(selector zitiv1alpha1.SelectorSpec) bool {
 	return len(selector.MatchNames) > 0 || len(selector.MatchRoleAttributes) > 0
+}
+
+func appendUnique(values []string, value string) []string {
+	if value == "" || slices.Contains(values, value) {
+		return values
+	}
+	return append(values, value)
 }
 
 func matchesNames(matchNames []string, name string) bool {

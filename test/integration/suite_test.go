@@ -116,10 +116,23 @@ func (f *fakeOpenZitiClient) FindIdentityByName(_ context.Context, name string) 
 	for _, identity := range f.identities {
 		if identity.Name == name {
 			copy := *identity
+			copy.RoleAttributes = append([]string(nil), identity.RoleAttributes...)
 			return &copy, nil
 		}
 	}
 	return nil, nil
+}
+
+func (f *fakeOpenZitiClient) ListIdentities(context.Context) ([]openziti.Identity, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	identities := make([]openziti.Identity, 0, len(f.identities))
+	for _, identity := range f.identities {
+		copy := *identity
+		copy.RoleAttributes = append([]string(nil), identity.RoleAttributes...)
+		identities = append(identities, copy)
+	}
+	return identities, nil
 }
 
 func (f *fakeOpenZitiClient) CreateIdentity(_ context.Context, identity openziti.Identity) (*openziti.Identity, error) {
@@ -619,10 +632,11 @@ var _ = BeforeSuite(func() {
 	Expect(serviceReconciler.SetupWithManager(mgr)).To(Succeed())
 
 	policyReconciler := &controller.ZitiAccessPolicyReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		Recorder:      mgr.GetEventRecorderFor("zitiaccesspolicy-controller"),
-		PolicyService: policyservice.NewService(fakeClient),
+		Client:          mgr.GetClient(),
+		Scheme:          mgr.GetScheme(),
+		Recorder:        mgr.GetEventRecorderFor("zitiaccesspolicy-controller"),
+		IdentityService: identityservice.NewService(fakeClient),
+		PolicyService:   policyservice.NewService(fakeClient),
 	}
 	Expect(policyReconciler.SetupWithManager(mgr)).To(Succeed())
 

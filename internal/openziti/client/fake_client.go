@@ -27,6 +27,7 @@ type FakeClient struct {
 	AuthenticateFunc                      func(context.Context, credentials.ManagementConfig) error
 	GetIdentityFunc                       func(context.Context, string) (*Identity, error)
 	FindIdentityByNameFunc                func(context.Context, string) (*Identity, error)
+	ListIdentitiesFunc                    func(context.Context) ([]Identity, error)
 	CreateIdentityFunc                    func(context.Context, Identity) (*Identity, error)
 	UpdateIdentityFunc                    func(context.Context, Identity) (*Identity, error)
 	DeleteIdentityFunc                    func(context.Context, string) error
@@ -70,6 +71,13 @@ func (f *FakeClient) GetIdentity(ctx context.Context, id string) (*Identity, err
 func (f *FakeClient) FindIdentityByName(ctx context.Context, name string) (*Identity, error) {
 	if f.FindIdentityByNameFunc != nil {
 		return f.FindIdentityByNameFunc(ctx, name)
+	}
+	return nil, nil
+}
+
+func (f *FakeClient) ListIdentities(ctx context.Context) ([]Identity, error) {
+	if f.ListIdentitiesFunc != nil {
+		return f.ListIdentitiesFunc(ctx)
 	}
 	return nil, nil
 }

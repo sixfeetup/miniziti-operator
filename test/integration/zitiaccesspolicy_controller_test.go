@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"time"
 
+	openziti "example.com/miniziti-operator/internal/openziti/client"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -88,6 +90,17 @@ func createReadyService(k8sName, zitiName string, roleAttributes ...string) {
 	)
 }
 
+func createBackendIdentity(id, name string, roleAttributes ...string) {
+	fakeOpenZiti.mu.Lock()
+	defer fakeOpenZiti.mu.Unlock()
+	fakeOpenZiti.identities[id] = &openziti.Identity{
+		ID:             id,
+		Name:           name,
+		Type:           "User",
+		RoleAttributes: append([]string(nil), roleAttributes...),
+	}
+}
+
 var _ = Describe("ZitiAccessPolicy controller", func() {
 	It("creates a dial policy from selectors and reports ready state", func() {
 		createReadyIdentity("alice-policy-create", "alice-policy-create@example.com", "employee", "devops")
@@ -112,6 +125,80 @@ var _ = Describe("ZitiAccessPolicy controller", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.List(ctx, &events, client.InNamespace(policy.GetNamespace()))).To(Succeed())
 			g.Expect(events.Items).NotTo(BeEmpty())
+		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
+	})
+
+	It("creates a dial policy from an existing backend identity role without a ZitiIdentity CR", func() {
+		createBackendIdentity("backend-admin-authentik", "authentik-admin@example.com", "admin")
+		createReadyService("authentik-backend-role", "authentik", "authentik")
+
+		policy := newZitiAccessPolicy("authentik-admin-dial")
+		Expect(
+			unstructured.SetNestedStringSlice(
+				policy.Object,
+				[]string{"admin"},
+				"spec",
+				"identitySelector",
+				"matchRoleAttributes",
+			),
+		).To(Succeed())
+		Expect(
+			unstructured.SetNestedStringSlice(
+				policy.Object,
+				[]string{"authentik"},
+				"spec",
+				"serviceSelector",
+				"matchNames",
+			),
+		).To(Succeed())
+		Expect(k8sClient.Create(ctx, policy)).To(Succeed())
+
+		policyID := awaitStatusID(policy, zitiAccessPolicyGVK)
+		backendPolicy, err := fakeOpenZiti.GetAccessPolicy(ctx, policyID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(backendPolicy.IdentityRoles).To(ContainElement("#admin"))
+		Expect(backendPolicy.IdentityRoles).NotTo(ContainElement("@backend-admin-authentik"))
+
+		stored := newUnstructuredWithGVK(zitiAccessPolicyGVK)
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(policy), stored)).To(Succeed())
+		resolvedIdentityCount, found, err := unstructured.NestedInt64(stored.Object, "status", "resolvedIdentityCount")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(found).To(BeTrue())
+		Expect(resolvedIdentityCount).To(Equal(int64(1)))
+	})
+
+	It("reports degraded status when a role selector matches no backend identities", func() {
+		createReadyService("authentik-zero-backend-role", "authentik-zero-backend", "authentik")
+
+		policy := newZitiAccessPolicy("authentik-missing-backend-role")
+		Expect(
+			unstructured.SetNestedStringSlice(
+				policy.Object,
+				[]string{"missing-backend-role"},
+				"spec",
+				"identitySelector",
+				"matchRoleAttributes",
+			),
+		).To(Succeed())
+		Expect(
+			unstructured.SetNestedStringSlice(
+				policy.Object,
+				[]string{"authentik-zero-backend"},
+				"spec",
+				"serviceSelector",
+				"matchNames",
+			),
+		).To(Succeed())
+		Expect(k8sClient.Create(ctx, policy)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			stored := newUnstructuredWithGVK(zitiAccessPolicyGVK)
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(policy), stored)).To(Succeed())
+
+			lastError, found, err := unstructured.NestedString(stored.Object, "status", "lastError")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(found).To(BeTrue())
+			g.Expect(lastError).To(Equal("identity selector matched zero identities"))
 		}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
 	})
 

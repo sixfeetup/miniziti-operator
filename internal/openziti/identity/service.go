@@ -42,6 +42,11 @@ func (s *Service) Get(ctx context.Context, id string) (*client.Identity, error) 
 	return s.client.GetIdentity(ctx, id)
 }
 
+// List fetches existing OpenZiti identities without adopting or mutating them.
+func (s *Service) List(ctx context.Context) ([]client.Identity, error) {
+	return s.client.ListIdentities(ctx)
+}
+
 // Create provisions a new OpenZiti identity from the desired resource state.
 func (s *Service) Create(ctx context.Context, desired DesiredIdentity) (*client.Identity, error) {
 	return s.client.CreateIdentity(ctx, toClientIdentity(desired))

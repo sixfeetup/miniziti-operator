@@ -210,10 +210,11 @@ func main() {
 		os.Exit(1)
 	}
 	if err = (&controller.ZitiAccessPolicyReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		Recorder:      mgr.GetEventRecorderFor("zitiaccesspolicy-controller"),
-		PolicyService: policyservice.NewService(openZitiClient),
+		Client:          mgr.GetClient(),
+		Scheme:          mgr.GetScheme(),
+		Recorder:        mgr.GetEventRecorderFor("zitiaccesspolicy-controller"),
+		IdentityService: identityservice.NewService(openZitiClient),
+		PolicyService:   policyservice.NewService(openZitiClient),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ZitiAccessPolicy")
 		os.Exit(1)
