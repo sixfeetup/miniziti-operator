@@ -20,3 +20,4 @@ dist/*
 tmp-kb/
 vendor/
 .kubeconfig
+.worktrees/
