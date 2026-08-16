@@ -77,21 +77,24 @@ func (r *ZitiAccessPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return r.markFailed(ctx, &policy, err, "SelectorValidationFailed", false)
 	}
 
-	identitySelector, serviceSelector, identityCount, serviceCount, err := r.resolveSelectors(ctx, &policy)
+	resolution, err := r.resolveSelectors(ctx, &policy)
 	if err != nil {
 		return r.markFailed(ctx, &policy, err, "SelectorResolutionFailed", true)
 	}
-	policy.Status.ResolvedIdentityCount = int32(identityCount)
-	policy.Status.ResolvedServiceCount = int32(serviceCount)
+	policy.Status.ResolvedIdentityCount = int32(resolution.identityCount)
+	policy.Status.ResolvedServiceCount = int32(resolution.serviceCount)
 
-	if identityCount == 0 {
+	if resolution.identityPending > 0 || resolution.servicePending > 0 {
+		return r.markFailed(ctx, &policy, fmt.Errorf("selector matches are waiting for backend IDs (identities pending: %d, services pending: %d)", resolution.identityPending, resolution.servicePending), "SelectorResolutionPending", true)
+	}
+	if resolution.identityCount == 0 {
 		return r.markFailed(ctx, &policy, fmt.Errorf("identity selector matched zero identities"), "SelectorResolutionFailed", false)
 	}
-	if serviceCount == 0 {
+	if resolution.serviceCount == 0 {
 		return r.markFailed(ctx, &policy, fmt.Errorf("service selector matched zero services"), "SelectorResolutionFailed", false)
 	}
 
-	desired := policyservice.FromResource(&policy, identitySelector, serviceSelector)
+	desired := policyservice.FromResource(&policy, resolution.identity, resolution.service)
 	backendPolicy, err := r.reconcilePolicy(ctx, &policy, desired)
 	if err != nil {
 		return r.markFailed(ctx, &policy, err, "PolicySyncFailed", true)
@@ -125,53 +128,69 @@ func (r *ZitiAccessPolicyReconciler) reconcilePolicy(
 	return r.PolicyService.Create(ctx, desired)
 }
 
+type selectorResolution struct {
+	identity        policyservice.ResolvedSelector
+	service         policyservice.ResolvedSelector
+	identityCount   int
+	serviceCount    int
+	identityPending int
+	servicePending  int
+}
+
 func (r *ZitiAccessPolicyReconciler) resolveSelectors(
 	ctx context.Context,
 	policy *zitiv1alpha1.ZitiAccessPolicy,
-) (policyservice.ResolvedSelector, policyservice.ResolvedSelector, int, int, error) {
+) (selectorResolution, error) {
 	var identities zitiv1alpha1.ZitiIdentityList
 	if err := r.List(ctx, &identities, client.InNamespace(policy.Namespace)); err != nil {
-		return policyservice.ResolvedSelector{}, policyservice.ResolvedSelector{}, 0, 0, err
+		return selectorResolution{}, err
 	}
 	var services zitiv1alpha1.ZitiServiceList
 	if err := r.List(ctx, &services, client.InNamespace(policy.Namespace)); err != nil {
-		return policyservice.ResolvedSelector{}, policyservice.ResolvedSelector{}, 0, 0, err
+		return selectorResolution{}, err
 	}
 
-	identitySelector := policyservice.ResolvedSelector{
-		RoleAttributes: append([]string(nil), policy.Spec.IdentitySelector.MatchRoleAttributes...),
-	}
-	identityCount := 0
+	resolution := selectorResolution{}
+	resolution.identity.RoleAttributes = append([]string(nil), policy.Spec.IdentitySelector.MatchRoleAttributes...)
 	for i := range identities.Items {
-		if matchesSelector(policy.Spec.IdentitySelector, identities.Items[i].Spec.Name, identities.Items[i].Spec.RoleAttributes) {
-			identityCount++
+		item := &identities.Items[i]
+		if !matchesSelector(policy.Spec.IdentitySelector, item.Spec.Name, item.Spec.RoleAttributes) {
+			continue
 		}
-		if matchesNames(policy.Spec.IdentitySelector.MatchNames, identities.Items[i].Spec.Name) && identities.Items[i].Status.ID != "" {
-			identitySelector.IDs = appendUnique(identitySelector.IDs, identities.Items[i].Status.ID)
+		if matchesNames(policy.Spec.IdentitySelector.MatchNames, item.Spec.Name) {
+			if item.Status.ID == "" {
+				resolution.identityPending++
+				continue
+			}
+			resolution.identity.IDs = appendUnique(resolution.identity.IDs, item.Status.ID)
 		}
+		resolution.identityCount++
 	}
-	if identityCount == 0 {
-		backendCount, err := r.resolveBackendIdentitySelector(ctx, policy.Spec.IdentitySelector, &identitySelector)
+	if resolution.identityCount == 0 && resolution.identityPending == 0 {
+		backendCount, err := r.resolveBackendIdentitySelector(ctx, policy.Spec.IdentitySelector, &resolution.identity)
 		if err != nil {
-			return policyservice.ResolvedSelector{}, policyservice.ResolvedSelector{}, 0, 0, err
+			return selectorResolution{}, err
 		}
-		identityCount = backendCount
+		resolution.identityCount = backendCount
 	}
 
-	serviceSelector := policyservice.ResolvedSelector{
-		RoleAttributes: append([]string(nil), policy.Spec.ServiceSelector.MatchRoleAttributes...),
-	}
-	serviceCount := 0
+	resolution.service.RoleAttributes = append([]string(nil), policy.Spec.ServiceSelector.MatchRoleAttributes...)
 	for i := range services.Items {
-		if matchesSelector(policy.Spec.ServiceSelector, services.Items[i].Spec.Name, services.Items[i].Spec.RoleAttributes) {
-			serviceCount++
+		item := &services.Items[i]
+		if !matchesSelector(policy.Spec.ServiceSelector, item.Spec.Name, item.Spec.RoleAttributes) {
+			continue
 		}
-		if matchesNames(policy.Spec.ServiceSelector.MatchNames, services.Items[i].Spec.Name) && services.Items[i].Status.ID != "" {
-			serviceSelector.IDs = appendUnique(serviceSelector.IDs, services.Items[i].Status.ID)
+		if matchesNames(policy.Spec.ServiceSelector.MatchNames, item.Spec.Name) {
+			if item.Status.ID == "" {
+				resolution.servicePending++
+				continue
+			}
+			resolution.service.IDs = appendUnique(resolution.service.IDs, item.Status.ID)
 		}
+		resolution.serviceCount++
 	}
 
-	return identitySelector, serviceSelector, identityCount, serviceCount, nil
+	return resolution, nil
 }
 
 func (r *ZitiAccessPolicyReconciler) resolveBackendIdentitySelector(

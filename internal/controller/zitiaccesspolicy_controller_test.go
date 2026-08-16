@@ -51,25 +51,25 @@ func TestResolveSelectorsCountsBackendIdentityRoleAttributes(t *testing.T) {
 		zitiv1alpha1.SelectorSpec{MatchNames: []string{"authentik"}},
 	)
 
-	identitySelector, serviceSelector, identityCount, serviceCount, err := reconciler.resolveSelectors(context.Background(), policy)
+	resolution, err := reconciler.resolveSelectors(context.Background(), policy)
 	if err != nil {
 		t.Fatalf("resolve selectors: %v", err)
 	}
 
-	if identityCount != 1 {
-		t.Fatalf("identityCount = %d, want 1", identityCount)
+	if resolution.identityCount != 1 {
+		t.Fatalf("identityCount = %d, want 1", resolution.identityCount)
 	}
-	if len(identitySelector.IDs) != 0 {
-		t.Fatalf("identitySelector.IDs = %v, want role selector without backend identity IDs", identitySelector.IDs)
+	if len(resolution.identity.IDs) != 0 {
+		t.Fatalf("identitySelector.IDs = %v, want role selector without backend identity IDs", resolution.identity.IDs)
 	}
-	if !reflect.DeepEqual(identitySelector.RoleAttributes, []string{"admin"}) {
-		t.Fatalf("identitySelector.RoleAttributes = %v, want [admin]", identitySelector.RoleAttributes)
+	if !reflect.DeepEqual(resolution.identity.RoleAttributes, []string{"admin"}) {
+		t.Fatalf("identitySelector.RoleAttributes = %v, want [admin]", resolution.identity.RoleAttributes)
 	}
-	if serviceCount != 1 {
-		t.Fatalf("serviceCount = %d, want 1", serviceCount)
+	if resolution.serviceCount != 1 {
+		t.Fatalf("serviceCount = %d, want 1", resolution.serviceCount)
 	}
-	if !reflect.DeepEqual(serviceSelector.IDs, []string{"service-authentik"}) {
-		t.Fatalf("serviceSelector.IDs = %v, want [service-authentik]", serviceSelector.IDs)
+	if !reflect.DeepEqual(resolution.service.IDs, []string{"service-authentik"}) {
+		t.Fatalf("serviceSelector.IDs = %v, want [service-authentik]", resolution.service.IDs)
 	}
 }
 
@@ -85,16 +85,16 @@ func TestResolveSelectorsResolvesBackendIdentityNames(t *testing.T) {
 		zitiv1alpha1.SelectorSpec{MatchNames: []string{"authentik"}},
 	)
 
-	identitySelector, _, identityCount, _, err := reconciler.resolveSelectors(context.Background(), policy)
+	resolution, err := reconciler.resolveSelectors(context.Background(), policy)
 	if err != nil {
 		t.Fatalf("resolve selectors: %v", err)
 	}
 
-	if identityCount != 1 {
-		t.Fatalf("identityCount = %d, want 1", identityCount)
+	if resolution.identityCount != 1 {
+		t.Fatalf("identityCount = %d, want 1", resolution.identityCount)
 	}
-	if !reflect.DeepEqual(identitySelector.IDs, []string{"identity-admin"}) {
-		t.Fatalf("identitySelector.IDs = %v, want [identity-admin]", identitySelector.IDs)
+	if !reflect.DeepEqual(resolution.identity.IDs, []string{"identity-admin"}) {
+		t.Fatalf("identitySelector.IDs = %v, want [identity-admin]", resolution.identity.IDs)
 	}
 }
 
@@ -110,16 +110,16 @@ func TestResolveSelectorsKeepsZeroMatchRoleSelectorsAtZero(t *testing.T) {
 		zitiv1alpha1.SelectorSpec{MatchNames: []string{"authentik"}},
 	)
 
-	_, _, identityCount, serviceCount, err := reconciler.resolveSelectors(context.Background(), policy)
+	resolution, err := reconciler.resolveSelectors(context.Background(), policy)
 	if err != nil {
 		t.Fatalf("resolve selectors: %v", err)
 	}
 
-	if identityCount != 0 {
-		t.Fatalf("identityCount = %d, want 0", identityCount)
+	if resolution.identityCount != 0 {
+		t.Fatalf("identityCount = %d, want 0", resolution.identityCount)
 	}
-	if serviceCount != 1 {
-		t.Fatalf("serviceCount = %d, want 1", serviceCount)
+	if resolution.serviceCount != 1 {
+		t.Fatalf("serviceCount = %d, want 1", resolution.serviceCount)
 	}
 }
 
@@ -136,25 +136,109 @@ func TestResolveSelectorsPreservesCRBackedIdentitySelectors(t *testing.T) {
 		zitiv1alpha1.SelectorSpec{MatchNames: []string{"argocd"}},
 	)
 
-	identitySelector, serviceSelector, identityCount, serviceCount, err := reconciler.resolveSelectors(context.Background(), policy)
+	resolution, err := reconciler.resolveSelectors(context.Background(), policy)
 	if err != nil {
 		t.Fatalf("resolve selectors: %v", err)
 	}
 
-	if identityCount != 1 {
-		t.Fatalf("identityCount = %d, want 1", identityCount)
+	if resolution.identityCount != 1 {
+		t.Fatalf("identityCount = %d, want 1", resolution.identityCount)
 	}
-	if !reflect.DeepEqual(identitySelector.IDs, []string{"identity-alice"}) {
-		t.Fatalf("identitySelector.IDs = %v, want [identity-alice]", identitySelector.IDs)
+	if !reflect.DeepEqual(resolution.identity.IDs, []string{"identity-alice"}) {
+		t.Fatalf("identitySelector.IDs = %v, want [identity-alice]", resolution.identity.IDs)
 	}
-	if !reflect.DeepEqual(identitySelector.RoleAttributes, []string{"devops"}) {
-		t.Fatalf("identitySelector.RoleAttributes = %v, want [devops]", identitySelector.RoleAttributes)
+	if !reflect.DeepEqual(resolution.identity.RoleAttributes, []string{"devops"}) {
+		t.Fatalf("identitySelector.RoleAttributes = %v, want [devops]", resolution.identity.RoleAttributes)
 	}
-	if serviceCount != 1 {
-		t.Fatalf("serviceCount = %d, want 1", serviceCount)
+	if resolution.serviceCount != 1 {
+		t.Fatalf("serviceCount = %d, want 1", resolution.serviceCount)
 	}
-	if !reflect.DeepEqual(serviceSelector.IDs, []string{"service-argocd"}) {
-		t.Fatalf("serviceSelector.IDs = %v, want [service-argocd]", serviceSelector.IDs)
+	if !reflect.DeepEqual(resolution.service.IDs, []string{"service-argocd"}) {
+		t.Fatalf("serviceSelector.IDs = %v, want [service-argocd]", resolution.service.IDs)
+	}
+}
+
+func TestResolveSelectorsMarksNameMatchedServiceWithoutBackendIDPending(t *testing.T) {
+	reconciler := newAccessPolicySelectorReconciler(
+		t,
+		nil,
+		readyIdentity("alice-cr", "alice@example.com", "identity-alice", "devops"),
+		unreadyService("harbor-cr", "harbor"),
+	)
+	policy := accessPolicyWithSelectors(
+		"harbor-dial",
+		zitiv1alpha1.SelectorSpec{MatchNames: []string{"alice@example.com"}},
+		zitiv1alpha1.SelectorSpec{MatchNames: []string{"harbor"}},
+	)
+
+	resolution, err := reconciler.resolveSelectors(context.Background(), policy)
+	if err != nil {
+		t.Fatalf("resolve selectors: %v", err)
+	}
+
+	if resolution.serviceCount != 0 {
+		t.Fatalf("serviceCount = %d, want 0 for service without backend ID", resolution.serviceCount)
+	}
+	if resolution.servicePending != 1 {
+		t.Fatalf("servicePending = %d, want 1", resolution.servicePending)
+	}
+	if len(resolution.service.IDs) != 0 {
+		t.Fatalf("service.IDs = %v, want no IDs", resolution.service.IDs)
+	}
+}
+
+func TestResolveSelectorsMarksNameMatchedIdentityWithoutBackendIDPending(t *testing.T) {
+	reconciler := newAccessPolicySelectorReconciler(
+		t,
+		[]openziti.Identity{{ID: "identity-alice", Name: "alice@example.com", Type: "User"}},
+		unreadyIdentity("alice-cr", "alice@example.com"),
+		readyService("harbor-cr", "harbor", "service-harbor"),
+	)
+	policy := accessPolicyWithSelectors(
+		"harbor-dial",
+		zitiv1alpha1.SelectorSpec{MatchNames: []string{"alice@example.com"}},
+		zitiv1alpha1.SelectorSpec{MatchNames: []string{"harbor"}},
+	)
+
+	resolution, err := reconciler.resolveSelectors(context.Background(), policy)
+	if err != nil {
+		t.Fatalf("resolve selectors: %v", err)
+	}
+
+	if resolution.identityCount != 0 {
+		t.Fatalf("identityCount = %d, want 0 for identity without backend ID", resolution.identityCount)
+	}
+	if resolution.identityPending != 1 {
+		t.Fatalf("identityPending = %d, want 1", resolution.identityPending)
+	}
+	if len(resolution.identity.IDs) != 0 {
+		t.Fatalf("identity.IDs = %v, want backend fallback skipped while a CR claim is pending", resolution.identity.IDs)
+	}
+}
+
+func TestResolveSelectorsCountsRoleMatchedServiceWithoutBackendID(t *testing.T) {
+	reconciler := newAccessPolicySelectorReconciler(
+		t,
+		nil,
+		readyIdentity("alice-cr", "alice@example.com", "identity-alice", "devops"),
+		unreadyService("harbor-cr", "harbor", "harbor"),
+	)
+	policy := accessPolicyWithSelectors(
+		"harbor-dial",
+		zitiv1alpha1.SelectorSpec{MatchNames: []string{"alice@example.com"}},
+		zitiv1alpha1.SelectorSpec{MatchRoleAttributes: []string{"harbor"}},
+	)
+
+	resolution, err := reconciler.resolveSelectors(context.Background(), policy)
+	if err != nil {
+		t.Fatalf("resolve selectors: %v", err)
+	}
+
+	if resolution.serviceCount != 1 {
+		t.Fatalf("serviceCount = %d, want 1: role attribute expressions need no backend ID", resolution.serviceCount)
+	}
+	if resolution.servicePending != 0 {
+		t.Fatalf("servicePending = %d, want 0", resolution.servicePending)
 	}
 }
 
@@ -205,4 +289,12 @@ func readyService(k8sName, zitiName, backendID string, roleAttributes ...string)
 		},
 		Status: zitiv1alpha1.ZitiServiceStatus{CommonStatus: zitiv1alpha1.CommonStatus{ID: backendID}},
 	}
+}
+
+func unreadyIdentity(k8sName, zitiName string, roleAttributes ...string) *zitiv1alpha1.ZitiIdentity {
+	return readyIdentity(k8sName, zitiName, "", roleAttributes...)
+}
+
+func unreadyService(k8sName, zitiName string, roleAttributes ...string) *zitiv1alpha1.ZitiService {
+	return readyService(k8sName, zitiName, "", roleAttributes...)
 }
