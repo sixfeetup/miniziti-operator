@@ -11,7 +11,6 @@ import (
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "example.com/miniziti-operator/api/v1alpha1"
 	"example.com/miniziti-operator/internal/entra"
@@ -19,8 +18,8 @@ import (
 )
 
 func (r *ZitiEntraRoleSyncReconciler) persistSyncResult(ctx context.Context, resource *v1alpha1.ZitiEntraRoleSync, result syncRunResult) error {
-	var current v1alpha1.ZitiEntraRoleSync
-	if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(resource), &current); err != nil {
+	current, err := r.readRoleSync(ctx, resource)
+	if err != nil {
 		return err
 	}
 	previous := current.Status.DeepCopy()
@@ -45,7 +44,7 @@ func (r *ZitiEntraRoleSyncReconciler) persistSyncResult(ctx context.Context, res
 	}
 	setRoleSyncConditions(&current.Status, resource.Generation, result.Reason, message, ready)
 	if !apiequality.Semantic.DeepEqual(previous, &current.Status) {
-		if err := r.Status().Update(ctx, &current); err != nil {
+		if err := r.Status().Update(ctx, current); err != nil {
 			return err
 		}
 	}

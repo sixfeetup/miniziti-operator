@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1alpha1 "example.com/miniziti-operator/api/v1alpha1"
@@ -52,7 +51,7 @@ func (r *ZitiEntraRoleSyncReconciler) applyRolePatch(ctx context.Context, resour
 	if fresh != nil {
 		outcome.RoleAttributes = append([]string(nil), fresh.RoleAttributes...)
 	}
-	self, others, owners, err := r.readOwnership(ctx, client.ObjectKeyFromObject(resource))
+	self, others, owners, err := r.readOwnership(ctx, resource)
 	if err != nil {
 		return outcome, false, err
 	}

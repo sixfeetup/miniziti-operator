@@ -95,7 +95,7 @@ func (r *ZitiEntraRoleSyncReconciler) runSync(ctx context.Context, resource *v1a
 	if err != nil {
 		return syncRunResult{Reason: syncReasonZitiError, Err: err}
 	}
-	self, others, owners, err := r.readOwnership(ctx, client.ObjectKeyFromObject(resource))
+	self, others, owners, err := r.readOwnership(ctx, resource)
 	if err != nil {
 		return syncRunResult{Reason: syncReasonZitiError, Err: err}
 	}

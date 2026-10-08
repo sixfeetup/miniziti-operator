@@ -119,11 +119,24 @@ func roleClaim(resource *v1alpha1.ZitiEntraRoleSync) rolesync.SyncClaim {
 	return rolesync.SyncClaim{Resource: rolesync.ResourceKey{Namespace: resource.Namespace, Name: resource.Name}, CreationTimestamp: resource.CreationTimestamp.Time, ManagedAttributes: append([]string(nil), resource.Status.ManagedAttributes...)}
 }
 
-func (r *ZitiEntraRoleSyncReconciler) readOwnership(ctx context.Context, key client.ObjectKey) (rolesync.SyncClaim, []rolesync.SyncClaim, []rolesync.IdentityOwner, error) {
-	var self v1alpha1.ZitiEntraRoleSync
-	if err := r.APIReader.Get(ctx, key, &self); err != nil {
+// Bind every fresh self read to the instance that supplied the directory snapshot.
+func (r *ZitiEntraRoleSyncReconciler) readRoleSync(ctx context.Context, resource *v1alpha1.ZitiEntraRoleSync) (*v1alpha1.ZitiEntraRoleSync, error) {
+	var current v1alpha1.ZitiEntraRoleSync
+	if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(resource), &current); err != nil {
+		return nil, err
+	}
+	if current.UID != resource.UID || !current.DeletionTimestamp.IsZero() {
+		return nil, errors.New("role sync resource was replaced or is deleting")
+	}
+	return &current, nil
+}
+
+func (r *ZitiEntraRoleSyncReconciler) readOwnership(ctx context.Context, resource *v1alpha1.ZitiEntraRoleSync) (rolesync.SyncClaim, []rolesync.SyncClaim, []rolesync.IdentityOwner, error) {
+	self, err := r.readRoleSync(ctx, resource)
+	if err != nil {
 		return rolesync.SyncClaim{}, nil, nil, err
 	}
+	key := client.ObjectKeyFromObject(resource)
 	var syncs v1alpha1.ZitiEntraRoleSyncList
 	if err := r.APIReader.List(ctx, &syncs); err != nil {
 		return rolesync.SyncClaim{}, nil, nil, err
@@ -143,22 +156,22 @@ func (r *ZitiEntraRoleSyncReconciler) readOwnership(ctx context.Context, key cli
 	for _, identity := range identities.Items {
 		owners = append(owners, rolesync.IdentityOwner{Resource: rolesync.ResourceKey{Namespace: identity.Namespace, Name: identity.Name}, IdentityID: identity.Status.ID, IdentityName: identity.Spec.Name})
 	}
-	return roleClaim(&self), others, owners, nil
+	return roleClaim(self), others, owners, nil
 }
 
 func (r *ZitiEntraRoleSyncReconciler) recordRoleClaims(ctx context.Context, resource *v1alpha1.ZitiEntraRoleSync, self rolesync.SyncClaim, values []string) error {
 	if sameRoleSet(self.ManagedAttributes, values) {
 		return nil
 	}
-	var current v1alpha1.ZitiEntraRoleSync
-	if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(resource), &current); err != nil {
+	current, err := r.readRoleSync(ctx, resource)
+	if err != nil {
 		return err
 	}
 	if !sameRoleSet(current.Status.ManagedAttributes, self.ManagedAttributes) {
 		return errors.New("recorded claims changed during sync")
 	}
 	current.Status.ManagedAttributes = append([]string(nil), values...)
-	if err := r.Status().Update(ctx, &current); err != nil {
+	if err := r.Status().Update(ctx, current); err != nil {
 		return err
 	}
 	resource.ResourceVersion = current.ResourceVersion
