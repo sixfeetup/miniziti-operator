@@ -188,7 +188,7 @@ func (c *ManagementClient) GetIdentity(ctx context.Context, id string) (*Identit
 			}
 			return nil, wrapAPICallError("get identity", err)
 		}
-		return identityFromEnvelope(resp.Payload), nil
+		return identityFromEnvelope(resp.Payload)
 	})
 }
 
@@ -219,17 +219,17 @@ func (c *ManagementClient) ListIdentities(ctx context.Context) ([]Identity, erro
 			if err != nil {
 				return nil, wrapAPICallError("list identities", err)
 			}
-			if resp.Payload == nil {
-				return identities, nil
+			if resp.Payload == nil || resp.Payload.Data == nil {
+				return nil, fmt.Errorf("identity list response has no data")
 			}
 
-			count := 0
+			count := len(resp.Payload.Data)
 			for _, item := range resp.Payload.Data {
-				count++
-				identity := identityFromEnvelope(&rest_model.DetailIdentityEnvelope{Data: item})
-				if identity != nil {
-					identities = append(identities, *identity)
+				identity, err := identityFromEnvelope(&rest_model.DetailIdentityEnvelope{Data: item})
+				if err != nil {
+					return nil, fmt.Errorf("list identities: %w", err)
 				}
+				identities = append(identities, *identity)
 			}
 			if count == 0 || count < int(limit) {
 				return identities, nil
@@ -735,7 +735,7 @@ func (c *ManagementClient) getIdentityByIDWithAPI(
 	if err != nil {
 		return nil, wrapAPICallError("get identity", err)
 	}
-	return identityFromEnvelope(resp.Payload), nil
+	return identityFromEnvelope(resp.Payload)
 }
 
 func (c *ManagementClient) getServiceByIDWithAPI(

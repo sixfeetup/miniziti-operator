@@ -1,6 +1,7 @@
 package client
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/openziti/edge-api/rest_model"
@@ -16,18 +17,15 @@ type Identity struct {
 	ExternalID     string
 }
 
-func identityFromEnvelope(envelope *rest_model.DetailIdentityEnvelope) *Identity {
-	if envelope == nil {
-		return nil
+func identityFromEnvelope(envelope *rest_model.DetailIdentityEnvelope) (*Identity, error) {
+	if envelope == nil || envelope.Data == nil {
+		return nil, errors.New("identity detail response has no data")
 	}
 	detail := envelope.Data
-	if detail == nil || detail.ID == nil || detail.Name == nil || detail.Type == nil || strings.TrimSpace(detail.Type.Name) == "" {
-		return nil
+	if detail.ID == nil || strings.TrimSpace(*detail.ID) == "" || detail.Name == nil || strings.TrimSpace(*detail.Name) == "" || detail.Type == nil || strings.TrimSpace(detail.Type.Name) == "" || detail.RoleAttributes == nil {
+		return nil, errors.New("identity detail response has missing required fields")
 	}
-	roleAttributes := []string(nil)
-	if detail.RoleAttributes != nil {
-		roleAttributes = append(roleAttributes, []string(*detail.RoleAttributes)...)
-	}
+	roleAttributes := append([]string(nil), []string(*detail.RoleAttributes)...)
 	externalID := ""
 	if detail.ExternalID != nil {
 		externalID = *detail.ExternalID
@@ -38,7 +36,7 @@ func identityFromEnvelope(envelope *rest_model.DetailIdentityEnvelope) *Identity
 		Name:           *detail.Name,
 		Type:           detail.Type.Name,
 		RoleAttributes: roleAttributes,
-	}
+	}, nil
 }
 
 func toIdentityCreate(identity Identity) *rest_model.IdentityCreate {
