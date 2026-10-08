@@ -12,14 +12,13 @@ import (
 var ErrNoUserRoles = errors.New("entra application has no roles allowing User")
 
 type Input struct {
-	ServicePrincipal entra.ServicePrincipal
-	Assignments      []entra.AppRoleAssignment
-	MembersByGroup   map[string][]entra.User
-	Identities       []openziti.Identity
-	IdentityOwners   []IdentityOwner
-	Self             SyncClaim
-	OtherClaims      []SyncClaim
-	UserProperty     string
+	Scope          RoleScope
+	MembersByGroup map[string][]entra.User
+	Identities     []openziti.Identity
+	IdentityOwners []IdentityOwner
+	Self           SyncClaim
+	OtherClaims    []SyncClaim
+	UserProperty   string
 }
 type IdentityPatch struct {
 	IdentityID, ExternalID            string
@@ -43,11 +42,11 @@ type PlanResult struct {
 // BuildPlan uses only complete snapshots. Conflicts yield no authorized patches.
 func BuildPlan(input Input) (PlanResult, error) {
 	result := PlanResult{}
-	current, groups, err := roleScope(input)
-	if err != nil {
-		return result, err
+	current := input.Scope.currentValues
+	if len(current) == 0 {
+		return result, ErrNoUserRoles
 	}
-	result.CurrentValues = current
+	result.CurrentValues = append([]string(nil), current...)
 	result.ManagedValues = sortedSet(current, input.Self.ManagedAttributes)
 	result.Ownership = ResolveOwnership(OwnershipInput{Self: input.Self, Candidates: result.ManagedValues, Others: input.OtherClaims})
 	retired := []string{}
@@ -56,7 +55,7 @@ func BuildPlan(input Input) (PlanResult, error) {
 			retired = append(retired, value)
 		}
 	}
-	grants := memberGrants(input, groups, &result)
+	grants := memberGrants(input, &result)
 	index := identityIndex(input.Identities)
 	for key := range grants {
 		if len(index[key]) == 0 {
@@ -92,7 +91,7 @@ func eligibleIdentity(identity openziti.Identity, owners []IdentityOwner, index 
 		return false
 	}
 	reason := ""
-	if identityOwned(identity, owners) {
+	if IdentityOwned(identity, owners) {
 		reason = "ManagedByZitiIdentity"
 	} else if len(index[strings.ToLower(identity.ExternalID)]) > 1 {
 		reason = "DuplicateIdentity"

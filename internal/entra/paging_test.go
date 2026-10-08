@@ -22,7 +22,7 @@ func TestDirectoryPagedAssignmentsAndUsers(t *testing.T) {
 				calls++
 				item := `{"principalId":"g","principalType":"Group","appRoleId":"r"}`
 				if members {
-					item = `{"@odata.type":"#microsoft.graph.user","id":"u","userPrincipalName":"u@example.com"}`
+					item = `{"@odata.type":"#microsoft.graph.user","id":"u","mail":null,"userPrincipalName":"u@example.com"}`
 				}
 				switch calls {
 				case 1:
@@ -103,7 +103,7 @@ func TestDirectoryRejectsPaginationCycles(t *testing.T) {
 		if calls == 2 {
 			next = origin + "/v1.0/servicePrincipals/sp/appRoleAssignedTo"
 		}
-		_, _ = fmt.Fprintf(w, `{"value":[{"principalId":"g"}],"@odata.nextLink":%q}`, next)
+		_, _ = fmt.Fprintf(w, `{"value":[{"principalId":"g","principalType":"Group","appRoleId":"r"}],"@odata.nextLink":%q}`, next)
 	})
 	origin = url
 	got, err := d.ListAppRoleAssignedTo(context.Background(), "sp")

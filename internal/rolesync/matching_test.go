@@ -14,7 +14,7 @@ func TestBuildPlanExcludesZitiIdentityClaims(t *testing.T) {
 	} {
 		input := baseInput()
 		input.IdentityOwners = []IdentityOwner{owner}
-		p, err := BuildPlan(input)
+		p, err := input.plan()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -24,7 +24,7 @@ func TestBuildPlanExcludesZitiIdentityClaims(t *testing.T) {
 	}
 	input := baseInput()
 	input.IdentityOwners = []IdentityOwner{{IdentityName: "alice"}}
-	p, err := BuildPlan(input)
+	p, err := input.plan()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestBuildPlanIndexesDuplicatesBeforeExclusion(t *testing.T) {
 		if excluded {
 			input.IdentityOwners = []IdentityOwner{{IdentityID: "identity-1"}}
 		}
-		p, err := BuildPlan(input)
+		p, err := input.plan()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -68,7 +68,7 @@ func TestBuildPlanUserProperties(t *testing.T) {
 		case "userPrincipalName":
 			input.Identities[0].ExternalID = strings.ToUpper(user.UserPrincipalName)
 		}
-		p, err := BuildPlan(input)
+		p, err := input.plan()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -78,7 +78,7 @@ func TestBuildPlanUserProperties(t *testing.T) {
 	}
 	input := baseInput()
 	input.MembersByGroup["g"][0].Mail = ""
-	p, err := BuildPlan(input)
+	p, err := input.plan()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestBuildPlanUserProperties(t *testing.T) {
 	}
 	input = baseInput()
 	input.Identities = nil
-	p, err = BuildPlan(input)
+	p, err = input.plan()
 	if err != nil {
 		t.Fatal(err)
 	}

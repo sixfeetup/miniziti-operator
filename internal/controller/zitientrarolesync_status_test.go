@@ -71,7 +71,7 @@ func TestRoleSyncStatusUsesWritePhaseCounters(t *testing.T) {
 	for i := 0; i < 60; i++ {
 		unmatched = append(unmatched, rolesync.UnmatchedMember{ID: "user", Reason: "MissingProperty"})
 	}
-	result := syncRunResult{Plan: &rolesync.PlanResult{MatchedIdentities: 2, MembersWithoutIdentity: 3, UnmatchedMembers: unmatched}, IdentitiesUpdated: 1, WritePhaseStarted: true, Reason: roleSyncCleanupPending}
+	result := syncRunResult{Plan: &rolesync.PlanResult{MatchedIdentities: 2, MembersWithoutIdentity: 3, UnmatchedMembers: unmatched}, Completion: &rolesync.Completion{ManagedAttributes: []string{"alpha", "beta"}, IdentitiesUpdated: 1, Reason: roleSyncCleanupPending}, WritePhaseStarted: true, Reason: roleSyncCleanupPending}
 	if err := f.r.persistSyncResult(context.Background(), f.obj, result); err != nil {
 		t.Fatal(err)
 	}

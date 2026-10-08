@@ -40,7 +40,6 @@ type ZitiEntraRoleSyncReconciler struct {
 type syncRunResult struct {
 	Plan              *rolesync.PlanResult
 	Completion        *rolesync.Completion
-	IdentitiesUpdated int
 	WritePhaseStarted bool
 	Reason            string
 	Err               error
@@ -108,11 +107,11 @@ func (r *ZitiEntraRoleSyncReconciler) runSync(ctx context.Context, resource *v1a
 	result := syncRunResult{Plan: &plan}
 	completionInput := rolesync.CompletionInput{Plan: plan, PreviousValues: self.ManagedAttributes}
 	if len(plan.Ownership.Conflicts) > 0 {
-		completionInput.StopReason = syncReasonConflict
+		completionInput.BlockReason = syncReasonConflict
 	} else if plan.WouldRemoveAll {
-		completionInput.StopReason = syncReasonWouldRemoveAll
+		completionInput.BlockReason = syncReasonWouldRemoveAll
 	}
-	if completionInput.StopReason != "" {
+	if completionInput.BlockReason != "" {
 		completion := rolesync.Complete(completionInput)
 		result.Completion = &completion
 		result.Reason = completion.Reason
@@ -125,9 +124,10 @@ func (r *ZitiEntraRoleSyncReconciler) runSync(ctx context.Context, resource *v1a
 	}
 	completionInput.ClaimRecorded = true
 	result.WritePhaseStarted = true
-	r.writeRolePlan(ctx, resource, &result, &completionInput)
+	completionInput.Outcomes = r.writeRolePlan(ctx, resource, plan)
 	completion := rolesync.Complete(completionInput)
 	result.Completion = &completion
 	result.Reason = completion.Reason
+	result.Err = completion.Err
 	return result
 }

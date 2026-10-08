@@ -1,27 +1,42 @@
 package rolesync
 
-import "slices"
+import (
+	"context"
+	"errors"
+	"slices"
+)
+
+const reasonSynced = "Synced"
 
 type OutcomeKind string
 
 const (
-	Observed OutcomeKind = "Observed"
-	Patched  OutcomeKind = "Patched"
-	Deleted  OutcomeKind = "Deleted"
-	Skipped  OutcomeKind = "Skipped"
-	Failed   OutcomeKind = "Failed"
+	Observed   OutcomeKind = "Observed"
+	Patched    OutcomeKind = "Patched"
+	Deleted    OutcomeKind = "Deleted"
+	Skipped    OutcomeKind = "Skipped"
+	Failed     OutcomeKind = "Failed"
+	Conflicted OutcomeKind = "Conflicted"
 )
 
 type IdentityOutcome struct {
 	IdentityID     string
 	Kind           OutcomeKind
 	RoleAttributes []string
+	Err            error
+	ConflictValues []string
 }
+
+// StopsWrites distinguishes a run-wide stop from an identity-local failure.
+func (o IdentityOutcome) StopsWrites() bool {
+	return o.Kind == Conflicted || errors.Is(o.Err, context.Canceled) || errors.Is(o.Err, context.DeadlineExceeded)
+}
+
 type CompletionInput struct {
 	Plan           PlanResult
 	PreviousValues []string
 	Outcomes       []IdentityOutcome
-	StopReason     string
+	BlockReason    string
 	ClaimRecorded  bool
 }
 type Completion struct {
@@ -29,26 +44,48 @@ type Completion struct {
 	Ready               bool
 	Reason              string
 	AdvanceLastSyncTime bool
+	IdentitiesUpdated   int
+	Err                 error
+	ConflictValues      []string
 }
 
 // Complete forgets retired claims only when every observed holder is cleared.
 func Complete(input CompletionInput) Completion {
+	result := Completion{ManagedAttributes: sortedSet(input.PreviousValues), Reason: input.BlockReason, ConflictValues: sortedSet(input.Plan.Ownership.Conflicts)}
 	if !input.ClaimRecorded {
-		return Completion{ManagedAttributes: sortedSet(input.PreviousValues), Reason: input.StopReason}
+		return result
 	}
-	reason := input.StopReason
+	result.ManagedAttributes = sortedSet(input.Plan.ManagedValues)
+	failed := false
 	for _, outcome := range input.Outcomes {
-		if outcome.Kind == Failed {
-			reason = "ZitiError"
+		switch outcome.Kind {
+		case Patched:
+			result.IdentitiesUpdated++
+		case Failed:
+			failed = true
+			if result.Err == nil {
+				result.Err = outcome.Err
+			}
+		case Conflicted:
+			result.Reason = "Conflict"
+			result.ConflictValues = sortedSet(result.ConflictValues, outcome.ConflictValues)
 		}
 	}
-	if reason != "" {
-		return Completion{ManagedAttributes: sortedSet(input.Plan.ManagedValues), Reason: reason}
+	if failed {
+		result.Reason = "ZitiError"
+	}
+	if result.Reason != "" {
+		return result
 	}
 	if retirementPending(input) {
-		return Completion{ManagedAttributes: sortedSet(input.Plan.ManagedValues), Reason: "CleanupPending"}
+		result.Reason = "CleanupPending"
+		return result
 	}
-	return Completion{ManagedAttributes: sortedSet(input.Plan.CurrentValues), Ready: true, Reason: "Synced", AdvanceLastSyncTime: true}
+	result.ManagedAttributes = sortedSet(input.Plan.CurrentValues)
+	result.Ready = true
+	result.Reason = reasonSynced
+	result.AdvanceLastSyncTime = true
+	return result
 }
 
 func retirementPending(input CompletionInput) bool {

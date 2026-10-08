@@ -13,13 +13,31 @@ import (
 func entraRole(value string, enabled bool) entra.AppRole {
 	return entra.AppRole{ID: value, Value: value, AllowedMemberTypes: []string{"User"}, IsEnabled: enabled}
 }
-func baseInput() Input {
-	return Input{
+
+type planFixture struct {
+	Input
+	ServicePrincipal entra.ServicePrincipal
+	Assignments      []entra.AppRoleAssignment
+}
+
+func (f planFixture) plan() (PlanResult, error) {
+	scope, err := ResolveRoleScope(f.ServicePrincipal, f.Assignments)
+	if err != nil {
+		return PlanResult{}, err
+	}
+	f.Scope = scope
+	return BuildPlan(f.Input)
+}
+
+func baseInput() planFixture {
+	return planFixture{
 		ServicePrincipal: entra.ServicePrincipal{ID: "sp", AppRoles: []entra.AppRole{entraRole("beta", true)}},
 		Assignments:      []entra.AppRoleAssignment{{PrincipalID: "g", PrincipalType: "Group", AppRoleID: "beta"}},
-		MembersByGroup:   map[string][]entra.User{"g": {{ID: "user-1", DisplayName: "Alice", Mail: "alice@example.com", UserPrincipalName: "alice@tenant.example"}}},
-		Identities:       []openziti.Identity{{ID: "identity-1", Name: "Alice", ExternalID: "Alice@example.com", RoleAttributes: []string{"custom"}}},
-		Self:             claim("ns", "self", 1), UserProperty: "mail",
+		Input: Input{
+			MembersByGroup: map[string][]entra.User{"g": {{ID: "user-1", DisplayName: "Alice", Mail: "alice@example.com", UserPrincipalName: "alice@tenant.example"}}},
+			Identities:     []openziti.Identity{{ID: "identity-1", Name: "Alice", ExternalID: "Alice@example.com", RoleAttributes: []string{"custom"}}},
+			Self:           claim("ns", "self", 1), UserProperty: "mail",
+		},
 	}
 }
 
@@ -27,7 +45,7 @@ func TestBuildPlanRoleAndGrantScope(t *testing.T) {
 	input := baseInput()
 	input.ServicePrincipal.AppRoles = append(input.ServicePrincipal.AppRoles, entraRole("alpha", false), entra.AppRole{ID: "app", Value: "app", IsEnabled: true, AllowedMemberTypes: []string{"Application"}})
 	input.Assignments = append(input.Assignments, entra.AppRoleAssignment{PrincipalID: "g", PrincipalType: "Group", AppRoleID: "alpha"})
-	p, err := BuildPlan(input)
+	p, err := input.plan()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +59,7 @@ func TestBuildPlanRoleAndGrantScope(t *testing.T) {
 	} {
 		input.Assignments = []entra.AppRoleAssignment{assignment}
 		input.Identities = nil
-		p, err = BuildPlan(input)
+		p, err = input.plan()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -51,7 +69,7 @@ func TestBuildPlanRoleAndGrantScope(t *testing.T) {
 	}
 	input = baseInput()
 	input.ServicePrincipal.AppRoles[0].AllowedMemberTypes = []string{"Application"}
-	_, err = BuildPlan(input)
+	_, err = input.plan()
 	if !errors.Is(err, ErrNoUserRoles) {
 		t.Fatalf("%v", err)
 	}
@@ -59,7 +77,7 @@ func TestBuildPlanRoleAndGrantScope(t *testing.T) {
 	input.ServicePrincipal.AppRoles = append(input.ServicePrincipal.AppRoles, entraRole("alpha", true))
 	input.Assignments = append(input.Assignments, entra.AppRoleAssignment{PrincipalID: "other", PrincipalType: "Group", AppRoleID: "alpha"})
 	input.MembersByGroup["other"] = input.MembersByGroup["g"]
-	p, err = BuildPlan(input)
+	p, err = input.plan()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +97,7 @@ func TestMergeAttributes(t *testing.T) {
 	}
 }
 
-func partialOffboarding() Input {
+func partialOffboarding() planFixture {
 	input := baseInput()
 	input.Identities[0].RoleAttributes = []string{"custom", "beta"}
 	input.Identities = append(input.Identities, openziti.Identity{ID: "keeping", ExternalID: "other@example.com", RoleAttributes: []string{"beta"}})
@@ -87,7 +105,7 @@ func partialOffboarding() Input {
 	return input
 }
 func TestBuildPlanOffboardingAndNoop(t *testing.T) {
-	p, err := BuildPlan(partialOffboarding())
+	p, err := partialOffboarding().plan()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +114,7 @@ func TestBuildPlanOffboardingAndNoop(t *testing.T) {
 	}
 	input := baseInput()
 	input.Identities[0].RoleAttributes = []string{"beta", "custom"}
-	p, err = BuildPlan(input)
+	p, err = input.plan()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +123,7 @@ func TestBuildPlanOffboardingAndNoop(t *testing.T) {
 	}
 	input = baseInput()
 	input.Identities[0].ExternalID = ""
-	p, err = BuildPlan(input)
+	p, err = input.plan()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +136,7 @@ func TestBuildPlanWouldRemoveAll(t *testing.T) {
 	input := baseInput()
 	input.Identities[0].RoleAttributes = []string{"custom", "beta"}
 	input.Assignments = nil
-	p, err := BuildPlan(input)
+	p, err := input.plan()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,14 +144,14 @@ func TestBuildPlanWouldRemoveAll(t *testing.T) {
 		t.Fatal("must guard removal")
 	}
 	input.IdentityOwners = []IdentityOwner{{IdentityID: "identity-1"}}
-	p, err = BuildPlan(input)
+	p, err = input.plan()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if p.WouldRemoveAll {
 		t.Fatal("excluded holders do not trigger guard")
 	}
-	p, err = BuildPlan(partialOffboarding())
+	p, err = partialOffboarding().plan()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +160,7 @@ func TestBuildPlanWouldRemoveAll(t *testing.T) {
 	}
 	input = baseInput()
 	input.Assignments = nil
-	p, err = BuildPlan(input)
+	p, err = input.plan()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +177,7 @@ func TestBuildPlanReportingDoesNotTruncateObservations(t *testing.T) {
 		input.Identities = append(input.Identities, openziti.Identity{ID: id, Name: id, ExternalID: id, RoleAttributes: []string{"alpha"}})
 		input.IdentityOwners = append(input.IdentityOwners, IdentityOwner{IdentityID: id})
 	}
-	p, err := BuildPlan(input)
+	p, err := input.plan()
 	if err != nil {
 		t.Fatal(err)
 	}

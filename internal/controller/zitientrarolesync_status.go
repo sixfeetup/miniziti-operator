@@ -39,7 +39,7 @@ func (r *ZitiEntraRoleSyncReconciler) persistSyncResult(ctx context.Context, res
 			current.Status.LastSyncTime = &now
 		}
 	}
-	if result.WritePhaseStarted && result.Plan != nil {
+	if result.WritePhaseStarted && result.Plan != nil && result.Completion != nil {
 		updateRoleSyncCounters(&current.Status, result)
 	}
 	setRoleSyncConditions(&current.Status, resource.Generation, result.Reason, message, ready)
@@ -58,7 +58,7 @@ func (r *ZitiEntraRoleSyncReconciler) persistSyncResult(ctx context.Context, res
 
 func updateRoleSyncCounters(status *v1alpha1.ZitiEntraRoleSyncStatus, result syncRunResult) {
 	status.MatchedIdentities = result.Plan.MatchedIdentities
-	status.IdentitiesUpdated = result.IdentitiesUpdated
+	status.IdentitiesUpdated = result.Completion.IdentitiesUpdated
 	status.MembersWithoutIdentity = result.Plan.MembersWithoutIdentity
 	status.UnmatchedMembers = nil
 	for _, member := range result.Plan.UnmatchedMembers {
@@ -99,8 +99,8 @@ func roleSyncMessage(result syncRunResult) string {
 	case syncReasonWouldRemoveAll:
 		return "Refusing to remove every managed attribute from eligible identities"
 	case syncReasonConflict:
-		if result.Plan != nil {
-			return "Attributes owned by another role sync: " + strings.Join(result.Plan.Ownership.Conflicts, ", ")
+		if result.Completion != nil {
+			return "Attributes owned by another role sync: " + strings.Join(result.Completion.ConflictValues, ", ")
 		}
 		return "Another role sync owns a managed attribute"
 	default:

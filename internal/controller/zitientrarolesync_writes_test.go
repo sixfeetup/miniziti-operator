@@ -120,7 +120,7 @@ func TestRoleSyncPartialPatchFailureContinues(t *testing.T) {
 		return nil
 	}
 	result := f.run()
-	if f.patches != 2 || result.IdentitiesUpdated != 1 || result.Completion == nil || result.Completion.Reason != roleSyncZitiError || !reflect.DeepEqual(result.Completion.ManagedAttributes, []string{"alpha", "beta"}) {
+	if f.patches != 2 || result.Completion == nil || result.Completion.IdentitiesUpdated != 1 || result.Completion.Reason != roleSyncZitiError || !reflect.DeepEqual(result.Completion.ManagedAttributes, []string{"alpha", "beta"}) {
 		t.Fatalf("%+v patches=%d", result, f.patches)
 	}
 }

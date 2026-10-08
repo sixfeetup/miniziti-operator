@@ -54,7 +54,7 @@ func TestResolveOwnershipMixedClaims(t *testing.T) {
 	input.Self.ManagedAttributes = []string{"beta"}
 	input.ServicePrincipal.AppRoles = append(input.ServicePrincipal.AppRoles, entraRole("alpha", true))
 	input.OtherClaims = []SyncClaim{claim("b", "other", 2, "alpha")}
-	p, err := BuildPlan(input)
+	p, err := input.plan()
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -65,32 +65,15 @@ func (r *ZitiEntraRoleSyncReconciler) readGraph(ctx context.Context, directory e
 	if principal == nil {
 		return input, errors.New("graph returned no service principal")
 	}
-	input.ServicePrincipal = *principal
-	userRoles := false
-	enabled := map[string]bool{}
-	for _, role := range principal.AppRoles {
-		if slices.Contains(role.AllowedMemberTypes, "User") {
-			userRoles = true
-			if role.IsEnabled {
-				enabled[role.ID] = true
-			}
-		}
-	}
-	if !userRoles {
-		return input, rolesync.ErrNoUserRoles
-	}
-	input.Assignments, err = directory.ListAppRoleAssignedTo(ctx, principal.ID)
+	assignments, err := directory.ListAppRoleAssignedTo(ctx, principal.ID)
 	if err != nil {
 		return input, err
 	}
-	groups := []string{}
-	for _, assignment := range input.Assignments {
-		if assignment.PrincipalType == "Group" && assignment.AppRoleID != "00000000-0000-0000-0000-000000000000" && enabled[assignment.AppRoleID] && !slices.Contains(groups, assignment.PrincipalID) {
-			groups = append(groups, assignment.PrincipalID)
-		}
+	input.Scope, err = rolesync.ResolveRoleScope(*principal, assignments)
+	if err != nil {
+		return input, err
 	}
-	slices.Sort(groups)
-	for _, id := range groups {
+	for _, id := range input.Scope.GroupIDs() {
 		users, err := directory.ListGroupUsers(ctx, id)
 		if err != nil {
 			return input, err

@@ -25,7 +25,7 @@ func retirementPlan(t *testing.T, kind string) PlanResult {
 	case "no-external-id":
 		input.Identities = append(input.Identities, openziti.Identity{ID: "anonymous", RoleAttributes: []string{"alpha"}})
 	}
-	p, err := BuildPlan(input)
+	p, err := input.plan()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestCompleteRetainsHistoryOnFailureOrLateConflict(t *testing.T) {
 		{"Conflict", []IdentityOutcome{{IdentityID: "i", Kind: Failed}}, "ZitiError"},
 	} {
 		input := completeInput(retirementPlan(t, ""))
-		input.StopReason = tc.stop
+		input.BlockReason = tc.stop
 		input.Outcomes = tc.outcomes
 		got := Complete(input)
 		if got.Reason != tc.reason || !reflect.DeepEqual(got.ManagedAttributes, []string{"alpha", "beta"}) || got.AdvanceLastSyncTime {
@@ -111,7 +111,7 @@ func TestCompletePreservesClaimsBeforeRecord(t *testing.T) {
 		input := completeInput(retirementPlan(t, ""))
 		input.PreviousValues = []string{"alpha"}
 		input.ClaimRecorded = false
-		input.StopReason = stop
+		input.BlockReason = stop
 		got := Complete(input)
 		if !reflect.DeepEqual(got.ManagedAttributes, []string{"alpha"}) || got.AdvanceLastSyncTime || got.Reason != stop {
 			t.Fatalf("%+v", got)

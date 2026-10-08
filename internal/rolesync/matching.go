@@ -1,16 +1,13 @@
 package rolesync
 
 import (
-	"slices"
 	"strings"
 
 	"example.com/miniziti-operator/internal/entra"
 	openziti "example.com/miniziti-operator/internal/openziti/client"
 )
 
-const defaultAccessRoleID = "00000000-0000-0000-0000-000000000000"
-
-func identityOwned(identity openziti.Identity, owners []IdentityOwner) bool {
+func IdentityOwned(identity openziti.Identity, owners []IdentityOwner) bool {
 	for _, owner := range owners {
 		if owner.IdentityID != "" && identity.ID == owner.IdentityID {
 			return true
@@ -33,42 +30,10 @@ func selectedProperty(user entra.User, property string) string {
 	}
 }
 
-// Role candidates include disabled roles; grants include enabled group roles only.
-func roleScope(input Input) ([]string, map[string][]string, error) {
-	current := []string{}
-	enabled := map[string]string{}
-	for _, role := range input.ServicePrincipal.AppRoles {
-		if !slices.Contains(role.AllowedMemberTypes, "User") {
-			continue
-		}
-		current = append(current, role.Value)
-		if role.IsEnabled {
-			enabled[role.ID] = role.Value
-		}
-	}
-	if len(current) == 0 {
-		return nil, nil, ErrNoUserRoles
-	}
-	groups := map[string][]string{}
-	for _, assignment := range input.Assignments {
-		value, ok := enabled[assignment.AppRoleID]
-		if !ok || assignment.PrincipalType != "Group" || assignment.AppRoleID == defaultAccessRoleID {
-			continue
-		}
-		groups[assignment.PrincipalID] = sortedSet(groups[assignment.PrincipalID], []string{value})
-	}
-	return sortedSet(current), groups, nil
-}
-
-func memberGrants(input Input, groups map[string][]string, result *PlanResult) map[string][]string {
+func memberGrants(input Input, result *PlanResult) map[string][]string {
 	grants := map[string][]string{}
 	missing := map[string]bool{}
-	groupIDs := make([]string, 0, len(groups))
-	for group := range groups {
-		groupIDs = append(groupIDs, group)
-	}
-	slices.Sort(groupIDs)
-	for _, group := range groupIDs {
+	for _, group := range input.Scope.GroupIDs() {
 		for _, user := range input.MembersByGroup[group] {
 			property := selectedProperty(user, input.UserProperty)
 			if property == "" {
@@ -79,7 +44,7 @@ func memberGrants(input Input, groups map[string][]string, result *PlanResult) m
 				continue
 			}
 			key := strings.ToLower(property)
-			grants[key] = sortedSet(grants[key], groups[group])
+			grants[key] = sortedSet(grants[key], input.Scope.grantsByGroup[group])
 		}
 	}
 	return grants

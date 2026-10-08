@@ -102,7 +102,7 @@ func (d *directory) get(ctx context.Context, endpoint string, out any) error {
 
 func (d *directory) GetServicePrincipal(ctx context.Context, appID string) (*ServicePrincipal, error) {
 	endpoint := d.baseURL + "/servicePrincipals(appId='" + url.PathEscape(appID) + "')?$select=id,appRoles"
-	var result ServicePrincipal
+	var result graphServicePrincipal
 	if err := d.get(ctx, endpoint, &result); err != nil {
 		var ge *GraphError
 		if errors.As(err, &ge) && ge.StatusCode == 404 {
@@ -110,34 +110,24 @@ func (d *directory) GetServicePrincipal(ctx context.Context, appID string) (*Ser
 		}
 		return nil, err
 	}
-	if result.ID == "" {
-		return nil, errors.New("graph response has no service principal ID")
-	}
-	return &result, nil
+	return result.snapshot()
 }
 
 func (d *directory) ListAppRoleAssignedTo(ctx context.Context, id string) ([]AppRoleAssignment, error) {
-	return readPages[AppRoleAssignment](ctx, d, d.baseURL+"/servicePrincipals/"+url.PathEscape(id)+"/appRoleAssignedTo")
-}
-
-func (d *directory) ListGroupUsers(ctx context.Context, id string) ([]User, error) {
-	type member struct {
-		User
-		Type string `json:"@odata.type"`
-	}
-	members, err := readPages[member](ctx, d, d.baseURL+"/groups/"+url.PathEscape(id)+"/members")
+	assignments, err := readPages[AppRoleAssignment](ctx, d, d.baseURL+"/servicePrincipals/"+url.PathEscape(id)+"/appRoleAssignedTo")
 	if err != nil {
 		return nil, err
 	}
-	users := []User{}
-	for _, m := range members {
-		if m.Type != "#microsoft.graph.user" {
-			continue
-		}
-		if m.UserPrincipalName == "" {
-			return nil, ErrLimitedUserData
-		}
-		users = append(users, m.User)
+	if err := validateAssignments(assignments); err != nil {
+		return nil, err
 	}
-	return users, nil
+	return assignments, nil
+}
+
+func (d *directory) ListGroupUsers(ctx context.Context, id string) ([]User, error) {
+	members, err := readPages[graphMember](ctx, d, d.baseURL+"/groups/"+url.PathEscape(id)+"/members")
+	if err != nil {
+		return nil, err
+	}
+	return groupUsers(members)
 }
