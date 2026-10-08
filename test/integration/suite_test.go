@@ -67,6 +67,8 @@ type fakeOpenZitiClient struct {
 	accessPolicies              map[string]*openziti.AccessPolicy
 	serviceEdgeRouterPolicies   map[string]*openziti.ServiceEdgeRouterPolicy
 	policyFailures              map[string]int
+	patchCalls                  map[string]int
+	patchFailures               map[string]error
 }
 
 func newFakeOpenZitiClient() *fakeOpenZitiClient {
@@ -105,6 +107,7 @@ func (f *fakeOpenZitiClient) GetIdentity(_ context.Context, id string) (*openzit
 	defer f.mu.Unlock()
 	if identity, ok := f.identities[id]; ok {
 		copy := *identity
+		copy.RoleAttributes = append([]string(nil), identity.RoleAttributes...)
 		return &copy, nil
 	}
 	return nil, nil
