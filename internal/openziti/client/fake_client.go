@@ -24,6 +24,7 @@ import (
 
 // FakeClient provides test-controlled behavior for reconcile and adapter tests.
 type FakeClient struct {
+	PatchIdentityRoleAttributesFunc       func(context.Context, string, []string) error
 	AuthenticateFunc                      func(context.Context, credentials.ManagementConfig) error
 	GetIdentityFunc                       func(context.Context, string) (*Identity, error)
 	FindIdentityByNameFunc                func(context.Context, string) (*Identity, error)

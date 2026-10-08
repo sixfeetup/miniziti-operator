@@ -1,0 +1,12 @@
+apiVersion: ziti.sixfeetup.com/v1alpha1
+kind: ZitiEntraRoleSync
+metadata:
+  name: example
+  namespace: ziti
+spec:
+  tenantId: 00000000-0000-0000-0000-000000000001
+  appId: 00000000-0000-0000-0000-000000000002
+  credentialsSecretRef:
+    name: ziti-role-sync-entra
+  userProperty: mail
+  interval: 10m

@@ -39,15 +39,6 @@ import (
 	"example.com/miniziti-operator/internal/credentials"
 )
 
-// Identity models the subset of OpenZiti identity state needed by the operator.
-type Identity struct {
-	ID             string
-	Name           string
-	Type           string
-	RoleAttributes []string
-	CreateOTT      bool
-}
-
 // Service models the subset of OpenZiti service state needed by the operator.
 type Service struct {
 	ID             string
@@ -100,6 +91,7 @@ type Client interface {
 	ListIdentities(context.Context) ([]Identity, error)
 	CreateIdentity(context.Context, Identity) (*Identity, error)
 	UpdateIdentity(context.Context, Identity) (*Identity, error)
+	PatchIdentityRoleAttributes(context.Context, string, []string) error
 	DeleteIdentity(context.Context, string) error
 	GetEnrollmentJWT(context.Context, string) (string, error)
 
@@ -196,7 +188,7 @@ func (c *ManagementClient) GetIdentity(ctx context.Context, id string) (*Identit
 			}
 			return nil, wrapAPICallError("get identity", err)
 		}
-		return identityFromEnvelope(resp.Payload), nil
+		return identityFromEnvelope(resp.Payload)
 	})
 }
 
@@ -227,17 +219,17 @@ func (c *ManagementClient) ListIdentities(ctx context.Context) ([]Identity, erro
 			if err != nil {
 				return nil, wrapAPICallError("list identities", err)
 			}
-			if resp.Payload == nil {
-				return identities, nil
+			if resp.Payload == nil || resp.Payload.Data == nil {
+				return nil, fmt.Errorf("identity list response has no data")
 			}
 
-			count := 0
+			count := len(resp.Payload.Data)
 			for _, item := range resp.Payload.Data {
-				count++
-				identity := identityFromEnvelope(&rest_model.DetailIdentityEnvelope{Data: item})
-				if identity != nil {
-					identities = append(identities, *identity)
+				identity, err := identityFromEnvelope(&rest_model.DetailIdentityEnvelope{Data: item})
+				if err != nil {
+					return nil, fmt.Errorf("list identities: %w", err)
 				}
+				identities = append(identities, *identity)
 			}
 			if count == 0 || count < int(limit) {
 				return identities, nil
@@ -668,26 +660,6 @@ func wrapAPICallError(action string, err error) error {
 	return fmt.Errorf("%s: %w", action, err)
 }
 
-func identityFromEnvelope(envelope *rest_model.DetailIdentityEnvelope) *Identity {
-	if envelope == nil {
-		return nil
-	}
-	detail := envelope.Data
-	if detail == nil || detail.ID == nil || detail.Name == nil || detail.Type == nil || strings.TrimSpace(detail.Type.Name) == "" {
-		return nil
-	}
-	roleAttributes := []string(nil)
-	if detail.RoleAttributes != nil {
-		roleAttributes = append(roleAttributes, []string(*detail.RoleAttributes)...)
-	}
-	return &Identity{
-		ID:             *detail.ID,
-		Name:           *detail.Name,
-		Type:           detail.Type.Name,
-		RoleAttributes: roleAttributes,
-	}
-}
-
 func serviceFromEnvelope(envelope *rest_model.DetailServiceEnvelope) *Service {
 	if envelope == nil {
 		return nil
@@ -763,7 +735,7 @@ func (c *ManagementClient) getIdentityByIDWithAPI(
 	if err != nil {
 		return nil, wrapAPICallError("get identity", err)
 	}
-	return identityFromEnvelope(resp.Payload), nil
+	return identityFromEnvelope(resp.Payload)
 }
 
 func (c *ManagementClient) getServiceByIDWithAPI(
@@ -914,34 +886,6 @@ func (c *ManagementClient) resolveConfigTypeIDWithAPI(
 	}
 
 	return "", fmt.Errorf("config type %q not found", name)
-}
-
-func toIdentityCreate(identity Identity) *rest_model.IdentityCreate {
-	roleAttributes := rest_model.Attributes(append([]string(nil), identity.RoleAttributes...))
-	identityType := rest_model.IdentityType(identity.Type)
-	isAdmin := false
-	created := &rest_model.IdentityCreate{
-		Name:           &identity.Name,
-		Type:           &identityType,
-		IsAdmin:        &isAdmin,
-		RoleAttributes: &roleAttributes,
-	}
-	if identity.CreateOTT {
-		created.Enrollment = &rest_model.IdentityCreateEnrollment{Ott: true}
-	}
-	return created
-}
-
-func toIdentityUpdate(identity Identity) *rest_model.IdentityUpdate {
-	roleAttributes := rest_model.Attributes(append([]string(nil), identity.RoleAttributes...))
-	identityType := rest_model.IdentityType(identity.Type)
-	isAdmin := false
-	return &rest_model.IdentityUpdate{
-		Name:           &identity.Name,
-		Type:           &identityType,
-		IsAdmin:        &isAdmin,
-		RoleAttributes: &roleAttributes,
-	}
 }
 
 func toServiceCreate(service Service) *rest_model.ServiceCreate {

@@ -38,6 +38,7 @@ import (
 	zitiv1alpha1 "example.com/miniziti-operator/api/v1alpha1"
 	"example.com/miniziti-operator/internal/controller"
 	"example.com/miniziti-operator/internal/credentials"
+	"example.com/miniziti-operator/internal/entra"
 	openziticlient "example.com/miniziti-operator/internal/openziti/client"
 	identityservice "example.com/miniziti-operator/internal/openziti/identity"
 	policyservice "example.com/miniziti-operator/internal/openziti/policy"
@@ -217,6 +218,18 @@ func main() {
 		PolicyService:   policyservice.NewService(openZitiClient),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ZitiAccessPolicy")
+		os.Exit(1)
+	}
+
+	if err = (&controller.ZitiEntraRoleSyncReconciler{
+		Client:           mgr.GetClient(),
+		APIReader:        mgr.GetAPIReader(),
+		Scheme:           mgr.GetScheme(),
+		Recorder:         mgr.GetEventRecorderFor("zitientrarolesync-controller"),
+		ZitiClient:       openZitiClient,
+		DirectoryFactory: entra.NewDirectory,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ZitiEntraRoleSync")
 		os.Exit(1)
 	}
 
