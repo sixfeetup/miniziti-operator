@@ -60,7 +60,7 @@ func (d *directory) token(ctx context.Context) (*oauth2.Token, error) {
 	}
 	token, err := d.source.Token()
 	if err != nil {
-		return nil, safeTokenError(err, d.config.ClientSecret)
+		return nil, safeTokenError(err, d.config.ClientSecret, d.now())
 	}
 	return token, nil
 }

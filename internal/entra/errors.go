@@ -30,9 +30,18 @@ func (e *GraphError) Error() string {
 	return fmt.Sprintf("Graph HTTP %d %s: %s", e.StatusCode, e.Code, e.Message)
 }
 
-type TokenError struct{ Code, Message string }
+type TokenError struct {
+	StatusCode    int
+	Code, Message string
+	RetryAfter    time.Duration
+	transient     bool
+}
 
 func (e *TokenError) Error() string { return "Entra token " + e.Code + ": " + e.Message }
+
+func (e *TokenError) Transient() bool {
+	return e.transient || e.StatusCode == http.StatusTooManyRequests || e.StatusCode >= 500 || e.Code == "temporarily_unavailable" || e.Code == "server_error"
+}
 
 func sanitize(s string, secrets ...string) string {
 	for _, secret := range secrets {
@@ -47,7 +56,7 @@ func sanitize(s string, secrets ...string) string {
 	return s
 }
 
-func safeTokenError(err error, secret string) error {
+func safeTokenError(err error, secret string, now time.Time) error {
 	var retrieve *oauth2.RetrieveError
 	if !errors.As(err, &retrieve) {
 		if errors.Is(err, context.Canceled) {
@@ -80,7 +89,14 @@ func safeTokenError(err error, secret string) error {
 	if i := strings.Index(description, ". "); i >= 0 {
 		description = description[:i+1]
 	}
-	return &TokenError{Code: sanitize(code, secret, body.AccessToken, body.RefreshToken, body.IDToken), Message: sanitize(description, secret, body.AccessToken, body.RefreshToken, body.IDToken)}
+	result := &TokenError{Code: sanitize(code, secret, body.AccessToken, body.RefreshToken, body.IDToken), Message: sanitize(description, secret, body.AccessToken, body.RefreshToken, body.IDToken)}
+	// Keep the OAuth retry meaning even when Code exposes the more useful AADSTS diagnostic.
+	result.transient = body.Code == "temporarily_unavailable" || body.Code == "server_error"
+	if retrieve.Response != nil {
+		result.StatusCode = retrieve.Response.StatusCode
+		result.RetryAfter = responseRetryAfter(retrieve.Response, now)
+	}
+	return result
 }
 
 func (d *directory) responseError(resp *http.Response, token string) error {
@@ -92,16 +108,20 @@ func (d *directory) responseError(resp *http.Response, token string) error {
 	if result.Message == "" {
 		result.Message = http.StatusText(resp.StatusCode)
 	}
-	if resp.StatusCode == 429 || resp.StatusCode == 503 {
-		value := resp.Header.Get("Retry-After")
-		if seconds, err := strconv.ParseInt(value, 10, 64); err == nil && seconds > 0 && seconds <= int64((time.Duration(1<<63-1))/time.Second) {
-			result.RetryAfter = time.Duration(seconds) * time.Second
-		} else if retry, err := http.ParseTime(value); err == nil {
-			result.RetryAfter = retry.Sub(d.now())
-			if result.RetryAfter < 0 {
-				result.RetryAfter = 0
-			}
-		}
-	}
+	result.RetryAfter = responseRetryAfter(resp, d.now())
 	return result
+}
+
+func responseRetryAfter(resp *http.Response, now time.Time) time.Duration {
+	if resp.StatusCode != http.StatusTooManyRequests && resp.StatusCode != http.StatusServiceUnavailable {
+		return 0
+	}
+	value := resp.Header.Get("Retry-After")
+	if seconds, err := strconv.ParseInt(value, 10, 64); err == nil && seconds > 0 && seconds <= int64((time.Duration(1<<63-1))/time.Second) {
+		return time.Duration(seconds) * time.Second
+	}
+	if retry, err := http.ParseTime(value); err == nil && retry.After(now) {
+		return retry.Sub(now)
+	}
+	return 0
 }

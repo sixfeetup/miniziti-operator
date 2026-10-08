@@ -112,6 +112,10 @@ func graphRunFailure(err error) syncRunResult {
 	if errors.As(err, &graphError) {
 		result.RetryAfter = graphError.RetryAfter
 	}
+	var tokenError *entra.TokenError
+	if errors.As(err, &tokenError) {
+		result.RetryAfter = tokenError.RetryAfter
+	}
 	return result
 }
 

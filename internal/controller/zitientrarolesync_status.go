@@ -115,16 +115,24 @@ func retryResult(interval time.Duration, reason string, err error, retryAfter ti
 	case syncReasonGraphError:
 		var token *entra.TokenError
 		var graph *entra.GraphError
-		if errors.As(err, &token) || errors.Is(err, entra.ErrServicePrincipalNotFound) || errors.Is(err, entra.ErrLimitedUserData) || errors.Is(err, rolesync.ErrNoUserRoles) {
+		if errors.Is(err, entra.ErrServicePrincipalNotFound) || errors.Is(err, entra.ErrLimitedUserData) || errors.Is(err, rolesync.ErrNoUserRoles) {
 			return ctrl.Result{RequeueAfter: interval}, nil
+		}
+		status := 0
+		if errors.As(err, &token) {
+			if !token.Transient() {
+				return ctrl.Result{RequeueAfter: interval}, nil
+			}
+			status = token.StatusCode
 		}
 		if errors.As(err, &graph) {
 			if graph.StatusCode == 401 || graph.StatusCode == 403 {
 				return ctrl.Result{RequeueAfter: interval}, nil
 			}
-			if (graph.StatusCode == 429 || graph.StatusCode == 503) && retryAfter > 0 {
-				return ctrl.Result{RequeueAfter: retryAfter}, nil
-			}
+			status = graph.StatusCode
+		}
+		if (status == 429 || status == 503) && retryAfter > 0 {
+			return ctrl.Result{RequeueAfter: retryAfter}, nil
 		}
 	}
 	if err == nil {
