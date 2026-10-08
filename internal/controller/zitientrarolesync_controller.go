@@ -6,7 +6,12 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/workqueue"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	controllerconfig "sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1alpha1 "example.com/miniziti-operator/api/v1alpha1"
 	"example.com/miniziti-operator/internal/entra"
@@ -40,6 +45,36 @@ type syncRunResult struct {
 	Reason            string
 	Err               error
 	RetryAfter        time.Duration
+}
+
+// +kubebuilder:rbac:groups=ziti.sixfeetup.com,resources=zitientrarolesyncs,verbs=get;list;watch
+// +kubebuilder:rbac:groups=ziti.sixfeetup.com,resources=zitientrarolesyncs/status,verbs=get;update;patch
+
+func (r *ZitiEntraRoleSyncReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	var resource v1alpha1.ZitiEntraRoleSync
+	if err := r.Get(ctx, req.NamespacedName, &resource); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+	if !resource.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, nil
+	}
+	interval, _ := validateRoleSyncSpec(&resource)
+	result := r.runSync(ctx, &resource)
+	// Use the original reconcile context, not the expired sync deadline.
+	if err := r.persistSyncResult(ctx, &resource, result); err != nil {
+		return ctrl.Result{}, err
+	}
+	return retryResult(interval, result.Reason, result.Err, result.RetryAfter)
+}
+
+func (r *ZitiEntraRoleSyncReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&v1alpha1.ZitiEntraRoleSync{}).
+		WithEventFilter(predicate.GenerationChangedPredicate{}).
+		WithOptions(controllerconfig.Options{
+			MaxConcurrentReconciles: 1,
+			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](10*time.Second, 10*time.Minute),
+		}).Complete(r)
 }
 
 func (r *ZitiEntraRoleSyncReconciler) runSync(ctx context.Context, resource *v1alpha1.ZitiEntraRoleSync) syncRunResult {

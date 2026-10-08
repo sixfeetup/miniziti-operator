@@ -49,9 +49,18 @@ rules:
   - ziti.sixfeetup.com
   resources:
   - zitiaccesspolicies/status
+  - zitientrarolesyncs/status
   - zitiidentities/status
   - zitiservices/status
   verbs:
   - get
   - patch
   - update
+- apiGroups:
+  - ziti.sixfeetup.com
+  resources:
+  - zitientrarolesyncs
+  verbs:
+  - get
+  - list
+  - watch
