@@ -46,11 +46,12 @@ import (
 )
 
 var (
-	testEnv      *envtest.Environment
-	k8sClient    client.Client
-	ctx          context.Context
-	cancel       context.CancelFunc
-	fakeOpenZiti *fakeOpenZitiClient
+	testEnv            *envtest.Environment
+	k8sClient          client.Client
+	ctx                context.Context
+	cancel             context.CancelFunc
+	fakeOpenZiti       *fakeOpenZitiClient
+	fakeDirectoryState *fakeEntra
 )
 
 type fakeOpenZitiClient struct {
@@ -69,6 +70,7 @@ type fakeOpenZitiClient struct {
 	policyFailures              map[string]int
 	patchCalls                  map[string]int
 	patchFailures               map[string]error
+	identityLookupGates         map[string]<-chan struct{}
 }
 
 func newFakeOpenZitiClient() *fakeOpenZitiClient {
@@ -113,7 +115,17 @@ func (f *fakeOpenZitiClient) GetIdentity(_ context.Context, id string) (*openzit
 	return nil, nil
 }
 
-func (f *fakeOpenZitiClient) FindIdentityByName(_ context.Context, name string) (*openziti.Identity, error) {
+func (f *fakeOpenZitiClient) FindIdentityByName(ctx context.Context, name string) (*openziti.Identity, error) {
+	f.mu.Lock()
+	gate := f.identityLookupGates[name]
+	f.mu.Unlock()
+	if gate != nil {
+		select {
+		case <-gate:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, identity := range f.identities {
@@ -642,6 +654,13 @@ var _ = BeforeSuite(func() {
 		PolicyService:   policyservice.NewService(fakeClient),
 	}
 	Expect(policyReconciler.SetupWithManager(mgr)).To(Succeed())
+
+	fakeDirectoryState = newFakeEntra()
+	Expect((&controller.ZitiEntraRoleSyncReconciler{
+		Client: mgr.GetClient(), APIReader: mgr.GetAPIReader(), Scheme: mgr.GetScheme(),
+		Recorder:   mgr.GetEventRecorderFor("zitientrarolesync-controller"),
+		ZitiClient: fakeClient, DirectoryFactory: fakeDirectoryState.factory,
+	}).SetupWithManager(mgr)).To(Succeed())
 
 	go func() {
 		defer GinkgoRecover()
