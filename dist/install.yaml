@@ -692,7 +692,7 @@ spec:
                       Dial nor Bind permission and does not require matching router identities.
                     items:
                       minLength: 1
-                      pattern: \S
+                      pattern: '[^\p{Z}\x{0009}-\x{000D}\x{0085}]'
                       type: string
                     type: array
                     x-kubernetes-list-type: set

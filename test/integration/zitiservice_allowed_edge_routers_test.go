@@ -43,6 +43,9 @@ var _ = Describe("allowed edge routers", func() {
 	},
 		Entry("empty", "router-blank-empty", ""),
 		Entry("whitespace", "router-blank-space", " \t\n "),
+		Entry("vertical tab", "router-blank-vtab", "\u000b"),
+		Entry("nonbreaking space", "router-blank-nbsp", "\u00a0"),
+		Entry("Unicode space", "router-blank-unicode", "\u2003"),
 	)
 
 	It("updates and removes exact router grants in place while preserving the last good policies on failure", func() {

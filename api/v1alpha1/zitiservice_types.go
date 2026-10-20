@@ -64,7 +64,7 @@ type ServiceRouterSpec struct {
 	// +optional
 	// +listType=set
 	// +kubebuilder:validation:items:MinLength=1
-	// +kubebuilder:validation:items:Pattern=\S
+	// +kubebuilder:validation:items:Pattern="[^\\p{Z}\\x{0009}-\\x{000D}\\x{0085}]"
 	AdditionalAllowedEdgeRouterNames []string `json:"additionalAllowedEdgeRouterNames,omitempty"`
 }
 
