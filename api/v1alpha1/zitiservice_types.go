@@ -58,6 +58,14 @@ type ServiceRouterSpec struct {
 	// Name is the exact OpenZiti router and router identity name.
 	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
+	// AdditionalAllowedEdgeRouterNames names exact edge routers allowed as service
+	// entry or exit points, in addition to the hosting router. This grants neither
+	// Dial nor Bind permission and does not require matching router identities.
+	// +optional
+	// +listType=set
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:Pattern=\S
+	AdditionalAllowedEdgeRouterNames []string `json:"additionalAllowedEdgeRouterNames,omitempty"`
 }
 
 // ZitiServiceSpec defines the desired state of ZitiService.
