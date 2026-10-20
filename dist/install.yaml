@@ -685,6 +685,17 @@ spec:
                 description: Router enables server-side router wiring for a functional
                   hosted service.
                 properties:
+                  additionalAllowedEdgeRouterNames:
+                    description: |-
+                      AdditionalAllowedEdgeRouterNames names exact edge routers allowed as service
+                      entry or exit points, in addition to the hosting router. This grants neither
+                      Dial nor Bind permission and does not require matching router identities.
+                    items:
+                      minLength: 1
+                      pattern: \S
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: set
                   name:
                     description: Name is the exact OpenZiti router and router identity
                       name.

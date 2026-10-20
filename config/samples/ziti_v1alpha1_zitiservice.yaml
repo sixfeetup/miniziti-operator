@@ -9,6 +9,9 @@ spec:
     - argocd
   router:
     name: ziti-prod-router
+    # Optional entry/exit routers. This grants neither Dial nor Bind permission.
+    # additionalAllowedEdgeRouterNames:
+    #   - ziti-client-router
   configs:
     intercept:
       protocols:
