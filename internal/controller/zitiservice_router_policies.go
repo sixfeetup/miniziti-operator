@@ -37,7 +37,7 @@ func (r *ZitiServiceReconciler) desiredRouterPolicies(
 	// Resolve the entire desired set before returning either policy. Failed
 	// resolution must not replace the last good policies with a partial set.
 	seen := map[string]bool{routerName: true}
-	var additionalIDs []string
+	additionalIDs := make([]string, 0, len(resource.Spec.Router.AdditionalAllowedEdgeRouterNames))
 	for _, rawName := range resource.Spec.Router.AdditionalAllowedEdgeRouterNames {
 		name := strings.TrimSpace(rawName)
 		if name == "" {

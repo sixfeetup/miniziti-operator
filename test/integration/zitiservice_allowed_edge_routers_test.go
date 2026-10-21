@@ -25,7 +25,9 @@ var _ = Describe("allowed edge routers", func() {
 		Eventually(func(g Gomega) {
 			stored := newUnstructuredWithGVK(zitiServiceGVK)
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(service), stored)).To(Succeed())
-			names, found, err := unstructured.NestedStringSlice(stored.Object, "spec", "router", "additionalAllowedEdgeRouterNames")
+			names, found, err := unstructured.NestedStringSlice(
+				stored.Object, "spec", "router", "additionalAllowedEdgeRouterNames",
+			)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(found).To(BeTrue())
 			g.Expect(names).To(Equal([]string{"admission-client"}))
@@ -51,8 +53,12 @@ var _ = Describe("allowed edge routers", func() {
 	It("updates and removes exact router grants in place while preserving the last good policies on failure", func() {
 		// These edge routers deliberately have no matching Router identities.
 		fakeOpenZiti.mu.Lock()
-		fakeOpenZiti.edgeRouters["allowed-client-2"] = &openziti.EdgeRouter{ID: "allowed-client-2", Name: "allowed-client-two"}
-		fakeOpenZiti.edgeRouters["allowed-client-3"] = &openziti.EdgeRouter{ID: "allowed-client-3", Name: "allowed-client-three"}
+		fakeOpenZiti.edgeRouters["allowed-client-2"] = &openziti.EdgeRouter{
+			ID: "allowed-client-2", Name: "allowed-client-two",
+		}
+		fakeOpenZiti.edgeRouters["allowed-client-3"] = &openziti.EdgeRouter{
+			ID: "allowed-client-3", Name: "allowed-client-three",
+		}
 		fakeOpenZiti.mu.Unlock()
 
 		service := newZitiService("router-lifecycle")
@@ -87,7 +93,9 @@ func setAllowedRouters(service *unstructured.Unstructured, names []string) {
 	if names == nil {
 		unstructured.RemoveNestedField(service.Object, "spec", "router", "additionalAllowedEdgeRouterNames")
 	} else {
-		Expect(unstructured.SetNestedStringSlice(service.Object, names, "spec", "router", "additionalAllowedEdgeRouterNames")).To(Succeed())
+		Expect(unstructured.SetNestedStringSlice(
+			service.Object, names, "spec", "router", "additionalAllowedEdgeRouterNames",
+		)).To(Succeed())
 	}
 }
 
@@ -102,7 +110,12 @@ func updateAllowedRouters(service *unstructured.Unstructured, names []string) {
 	})).To(Succeed())
 }
 
-func awaitAllowedRouterState(service client.Object, roles []string, reason string, original *zitiv1alpha1.ZitiServiceStatus) *zitiv1alpha1.ZitiServiceStatus {
+func awaitAllowedRouterState(
+	service client.Object,
+	roles []string,
+	reason string,
+	original *zitiv1alpha1.ZitiServiceStatus,
+) *zitiv1alpha1.ZitiServiceStatus {
 	var stored zitiv1alpha1.ZitiService
 	Eventually(func(g Gomega) {
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(service), &stored)).To(Succeed())
