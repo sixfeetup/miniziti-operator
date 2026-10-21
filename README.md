@@ -125,13 +125,40 @@ spec:
       port: 443
 ```
 
-When `spec.router.name` is set, the operator also creates the OpenZiti `Bind`
-service policy and service-edge-router policy needed for the named router to
-host the service. The router name must match an existing OpenZiti edge router
-and its router identity.
+When `spec.router.name` is set, the operator creates two OpenZiti policies.
+The `Bind` policy lets only the named Router identity host this service.
+The service-edge-router policy allows this service to use the named edge router.
+The name must match an existing OpenZiti edge router and its Router identity.
 
-Dial access remains a separate `ZitiAccessPolicy`, so you can grant client/user
-access independently from service hosting.
+To allow other edge routers as entry or exit points for this service, add their
+exact OpenZiti names:
+
+```yaml
+spec:
+  router:
+    name: ziti-prod-router
+    additionalAllowedEdgeRouterNames:
+      - ziti-client-router
+```
+
+The hosting edge router is always included. Omit the list or use an empty list
+for the existing host-only behavior. Names are trimmed and must not be blank.
+Additional routers need an edge-router record, not a matching identity.
+The operator resolves each name to an ID and uses exact `@ID` policy roles.
+The list does not accept role selectors or wildcards.
+
+The new field grants neither `Dial` permission to connect nor `Bind` permission
+to host. It does not create routers or identity-edge-router policies.
+Dial access remains a separate `ZitiAccessPolicy`. Clients also need any
+identity-edge-router permission required by OpenZiti.
+
+If a router lookup fails or returns no ID, reconciliation reports
+`Ready=False` with reason `RouterResolutionFailed`. The operator keeps both
+previous router policies unchanged. Service and configuration updates can occur
+before router resolution. Policy writes after successful resolution are not
+transactional. On the next successful reconciliation, list changes update the
+existing service-edge-router policy in place. Removing a name removes only
+this policy's grant. Other OpenZiti policies can still grant access.
 
 Example access policy:
 

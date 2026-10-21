@@ -159,38 +159,6 @@ func (r *ZitiServiceReconciler) reconcileConfig(
 	return r.ServiceManager.CreateConfig(ctx, desired)
 }
 
-func (r *ZitiServiceReconciler) desiredRouterPolicies(
-	ctx context.Context,
-	resource *zitiv1alpha1.ZitiService,
-	serviceID string,
-) (zitiservice.RouterPolicySet, error) {
-	routerName := strings.TrimSpace(resource.Spec.Router.Name)
-	routerIdentity, err := r.ServiceManager.FindIdentityByName(ctx, routerName)
-	if err != nil {
-		return zitiservice.RouterPolicySet{}, err
-	}
-	if routerIdentity == nil || strings.TrimSpace(routerIdentity.ID) == "" {
-		return zitiservice.RouterPolicySet{}, fmt.Errorf("router identity %q not found", routerName)
-	}
-	if !strings.EqualFold(strings.TrimSpace(routerIdentity.Type), "Router") {
-		return zitiservice.RouterPolicySet{}, fmt.Errorf("identity %q is not a Router identity", routerName)
-	}
-
-	edgeRouter, err := r.ServiceManager.FindEdgeRouterByName(ctx, routerName)
-	if err != nil {
-		return zitiservice.RouterPolicySet{}, err
-	}
-	if edgeRouter == nil || strings.TrimSpace(edgeRouter.ID) == "" {
-		return zitiservice.RouterPolicySet{}, fmt.Errorf("edge router %q not found", routerName)
-	}
-
-	policies, ok := zitiservice.RouterPolicies(resource, serviceID, routerIdentity.ID, edgeRouter.ID)
-	if !ok {
-		return zitiservice.RouterPolicySet{}, fmt.Errorf("spec.router.name must not be empty")
-	}
-	return policies, nil
-}
-
 func (r *ZitiServiceReconciler) reconcileAccessPolicy(
 	ctx context.Context,
 	existingID string,
