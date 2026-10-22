@@ -22,10 +22,13 @@ func identityFromEnvelope(envelope *rest_model.DetailIdentityEnvelope) (*Identit
 		return nil, errors.New("identity detail response has no data")
 	}
 	detail := envelope.Data
-	if detail.ID == nil || strings.TrimSpace(*detail.ID) == "" || detail.Name == nil || strings.TrimSpace(*detail.Name) == "" || detail.Type == nil || strings.TrimSpace(detail.Type.Name) == "" || detail.RoleAttributes == nil {
+	if detail.ID == nil || strings.TrimSpace(*detail.ID) == "" || detail.Name == nil || strings.TrimSpace(*detail.Name) == "" || detail.Type == nil || strings.TrimSpace(detail.Type.Name) == "" {
 		return nil, errors.New("identity detail response has missing required fields")
 	}
-	roleAttributes := append([]string(nil), []string(*detail.RoleAttributes)...)
+	var roleAttributes []string
+	if detail.RoleAttributes != nil {
+		roleAttributes = append([]string(nil), []string(*detail.RoleAttributes)...)
+	}
 	externalID := ""
 	if detail.ExternalID != nil {
 		externalID = *detail.ExternalID
